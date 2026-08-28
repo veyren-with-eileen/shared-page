@@ -494,7 +494,7 @@ app 里的手写字用的是[霞鹜文楷](https://github.com/lxgw/LxgwWenKai)�
 
 ## 素材和许可
 
-代码是 MIT，随便用。
+项目代码依据 [PolyForm Noncommercial License 1.0.0](LICENSE) 提供，仅限非商业用途。商业使用需要事先取得版权持有人的书面许可。
 
 - **贴纸**：一部分是脚本画的，一部分底图来自 Wikimedia Commons 的公有领域 / CC0 素材，逐张的出处在 `ios/LICENSES/sources-*.md` 里。
 - **字体**：霞鹜文楷（GB2312 子集）、Space Mono、Instrument Serif、Caveat，都是 OFL，许可证全文在 `ios/LICENSES/`。
