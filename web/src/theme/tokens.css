@@ -1,0 +1,51 @@
+:root {
+  color-scheme: light;
+
+  /* Theme.swift / Ink */
+  --ink-kitty: #d4737f;
+  --ink-master: #629ba7;
+  --ink-system: #9a9490;
+  --ink-note-kitty: #c9556a;
+  --ink-note-master: #274e56;
+  --ink-title: #5c4249;
+  --ink-title-dim: rgb(134 100 106 / 52%);
+  --ink-sub: rgb(134 100 106 / 62%);
+  --ink-sub-light: rgb(134 100 106 / 55%);
+  --ink-hour-label: rgb(134 100 106 / 50%);
+  --ink-dim-day: rgb(134 100 106 / 34%);
+  --ink-today: #d4737f;
+  --ink-legend: rgb(134 100 106 / 78%);
+
+  /* Theme.swift / Paper */
+  --paper-card: #ffffff;
+  --paper-border: #e4c2c6;
+  --paper-grid-line: rgb(230 196 200 / 95%);
+  --paper-texture: rgb(214 170 176 / 20%);
+  --paper-card-shadow: rgb(214 160 166 / 22%);
+  --paper-period: #fbdde4;
+  --paper-block-kitty: rgb(214 120 132 / 11%);
+  --paper-block-master: rgb(79 153 168 / 13%);
+  --paper-block-auto: rgb(154 148 144 / 13%);
+  --paper-block-pick: rgb(214 120 132 / 20%);
+  --paper-event-kitty: rgb(214 120 132 / 8%);
+  --paper-event-master: rgb(79 153 168 / 11%);
+  --paper-event-auto: rgb(154 148 144 / 13%);
+  --paper-instax-fill: #efeae3;
+  --paper-fab: #f4d9de;
+  --paper-capsule: #fbeef1;
+  --paper-nav-border: #deb4ba;
+
+  /* 402 × 874 SwiftUI reference canvas */
+  --canvas-width: 402px;
+  --canvas-height: 874px;
+  --month-cell-height: 88px;
+  --card-radius: 5px;
+
+  --font-serif: "Instrument Serif", Georgia, serif;
+  --font-mono: "Space Mono", monospace;
+  --font-script: "Caveat", cursive;
+  --font-body: "LXGW WenKai", system-ui, sans-serif;
+  --font-hand-kitty: "LXGW WenKai", cursive;
+  --font-hand-master: "LXGW WenKai", cursive;
+  --font-hand-system: "LXGW WenKai", cursive;
+}
