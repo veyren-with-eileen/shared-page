@@ -352,3 +352,11 @@
   outline: 2px solid var(--ink-kitty);
   outline-offset: -2px;
 }
+
+/* Month cells became buttons in Checkpoint 2. Reset the remaining user-agent border
+   before restoring the original right/bottom grid rules. */
+.month-cell {
+  border: 0;
+  border-right: 0.8px solid var(--paper-grid-line);
+  border-bottom: 0.8px solid var(--paper-grid-line);
+}
