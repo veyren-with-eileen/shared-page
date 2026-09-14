@@ -19,13 +19,23 @@ npm install
 npm run dev
 ```
 
-Open the Vite URL and enter the calendar token in the connection prompt. The token is kept in browser session storage only and is never written into source files.
+On Windows PowerShell, use:
 
-The dev server proxies `/api/*` to `CALENDAR_PROXY_TARGET`. For production, serve the PWA and proxy `/api/v1/calendar/*` to the existing backend on the same origin.
+```powershell
+Copy-Item .env.example .env.local
+npm install
+npm run dev
+```
+
+The dev server proxies `/api/*` to `CALENDAR_PROXY_TARGET`. Keep the API base URL in the connection screen as `/api/v1/calendar`, then enter the existing calendar token. Values entered in the UI are stored in `sessionStorage` only: they disappear when the tab session ends and are never written into Git.
+
+For a managed runtime, copy `public/runtime-config.example.js` to the ignored `public/runtime-config.js`, or serve an equivalent script at `/runtime-config.js`. Never commit the real token.
+
+For production, serve the PWA and proxy `/api/v1/calendar/*` to the existing backend on the same origin. Direct cross-origin browser access requires backend CORS support and is not assumed by this checkpoint.
 
 ## Checkpoint boundary
 
-Implemented here: PWA shell, iOS theme tokens, calendar read DTO/materialization, read-only REST loading, and Month View.
+Implemented here: PWA shell, iOS theme tokens, calendar read DTO/materialization, read-only REST loading, unseen markers, and Month View.
 
 Not part of this checkpoint: event mutations, Day View, notes UI, scrapbook decorations, snapshots, Web Push, widgets, or any server/MCP change.
 

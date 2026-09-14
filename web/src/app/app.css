@@ -1,0 +1,108 @@
+.app-shell {
+  min-height: 100vh;
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow-x: hidden;
+  background: #fff;
+}
+
+.connection-link {
+  margin: 8px 0 24px;
+  padding: 4px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-sub-light);
+  font-family: var(--font-script);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.connection-screen {
+  min-height: 100vh;
+  min-height: 100svh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    linear-gradient(var(--paper-texture) 1px, transparent 1px),
+    linear-gradient(90deg, var(--paper-texture) 1px, transparent 1px),
+    #fff;
+  background-size: 13px 13px;
+}
+
+.connection-card {
+  width: min(360px, 100%);
+  padding: 28px;
+  border: 1.4px solid var(--paper-border);
+  border-radius: var(--card-radius);
+  background: #fff;
+  box-shadow: 3px 3px 0 var(--paper-card-shadow);
+}
+
+.connection-kicker {
+  margin: 0 0 4px;
+  color: var(--ink-kitty);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.connection-card h1 {
+  margin: 0;
+  color: var(--ink-title);
+  font-family: var(--font-serif);
+  font-size: 34px;
+  font-weight: 400;
+}
+
+.connection-card p {
+  color: var(--ink-sub);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.connection-card label {
+  display: grid;
+  gap: 5px;
+  margin-top: 16px;
+  color: var(--ink-legend);
+  font-family: var(--font-mono);
+  font-size: 9px;
+}
+
+.connection-card input {
+  width: 100%;
+  padding: 10px 11px;
+  border: 1px solid var(--paper-nav-border);
+  border-radius: 4px;
+  outline: none;
+  color: var(--ink-title);
+  background: var(--paper-card);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.connection-card input:focus {
+  box-shadow: 0 0 0 3px var(--paper-period);
+}
+
+.connection-card > button {
+  width: 100%;
+  margin-top: 20px;
+  padding: 10px;
+  border: 1.3px solid var(--paper-nav-border);
+  border-radius: 4px;
+  background: var(--paper-fab);
+  color: var(--ink-title);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.connection-card > button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}

@@ -1,0 +1,336 @@
+.canvas-viewport {
+  flex: 0 0 auto;
+  position: relative;
+  overflow: visible;
+}
+
+.calendar-canvas {
+  width: var(--canvas-width);
+  min-height: var(--canvas-height);
+  background: #fff;
+  transform-origin: top left;
+  overflow: hidden;
+}
+
+.month-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 14px 18px 0;
+}
+
+.month-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  height: 48px;
+}
+
+.month-heading h1 {
+  margin: 0;
+  color: var(--ink-title);
+  font-family: var(--font-serif);
+  font-size: 40px;
+  font-weight: 400;
+  letter-spacing: -0.5px;
+  line-height: 1;
+}
+
+.month-heading span {
+  color: var(--ink-title-dim);
+  font-family: var(--font-serif);
+  font-size: 18px;
+}
+
+.month-subtitle {
+  display: block;
+  margin: 4px 0 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-sub);
+  font-family: var(--font-script);
+  font-size: 14px;
+  line-height: 1;
+  text-align: left;
+}
+
+.month-subtitle:disabled {
+  opacity: 1;
+}
+
+.month-subtitle.is-error {
+  cursor: pointer;
+}
+
+.month-nav {
+  display: flex;
+  gap: 5px;
+  padding-top: 6px;
+}
+
+.month-nav button {
+  width: 22px;
+  height: 19px;
+  padding: 0;
+  border: 1.3px solid var(--paper-nav-border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink-title);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.month-card {
+  width: 378px;
+  margin: 16px 12px 0;
+  overflow: hidden;
+  border: 1.4px solid var(--paper-border);
+  border-radius: var(--card-radius);
+  background: var(--paper-card);
+  box-shadow: 3px 3px 0 var(--paper-card-shadow);
+}
+
+.weekday-row {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  border-bottom: 1.3px solid var(--paper-border);
+}
+
+.weekday-row div {
+  padding: 5px 0;
+  border-right: 0.8px solid var(--paper-grid-line);
+  color: var(--ink-title);
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  line-height: 1;
+  text-align: center;
+}
+
+.weekday-row div:last-child {
+  border-right: 0;
+}
+
+.month-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+}
+
+.month-cell {
+  position: relative;
+  min-width: 0;
+  height: var(--month-cell-height);
+  overflow: hidden;
+  border-right: 0.8px solid var(--paper-grid-line);
+  border-bottom: 0.8px solid var(--paper-grid-line);
+  background: #fff;
+}
+
+.month-cell:nth-child(7n) {
+  border-right: 0;
+}
+
+.month-cell:nth-last-child(-n + 7) {
+  border-bottom: 0;
+}
+
+.grid-paper,
+.dim-hatch {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.grid-paper {
+  background-image:
+    linear-gradient(to right, transparent 12px, var(--paper-texture) 12px, var(--paper-texture) 13px, transparent 13px),
+    linear-gradient(to bottom, transparent 12px, var(--paper-texture) 12px, var(--paper-texture) 13px, transparent 13px);
+  background-size: 13px 13px;
+}
+
+.dim-hatch {
+  background: repeating-linear-gradient(
+    135deg,
+    transparent 0 3px,
+    rgb(214 168 172 / 16%) 3px 5px
+  );
+}
+
+.span-band {
+  position: absolute;
+  z-index: 1;
+  left: 0;
+  right: 0;
+  height: 33px;
+  pointer-events: none;
+}
+
+.span-band.lane-0 {
+  top: 17px;
+}
+
+.span-band.lane-1 {
+  top: 53px;
+}
+
+.span-band.author-kitty {
+  background: var(--paper-block-kitty);
+}
+
+.span-band.author-master {
+  background: var(--paper-block-master);
+}
+
+.span-band.author-system {
+  background: var(--paper-block-auto);
+}
+
+.period-band {
+  position: absolute;
+  z-index: 2;
+  top: 2px;
+  left: -1px;
+  right: -1px;
+  height: 18px;
+  background: var(--paper-period);
+}
+
+.period-band.is-start {
+  left: 3px;
+  border-radius: 9px 0 0 9px;
+}
+
+.period-band.is-end {
+  right: 3px;
+  border-radius: 0 9px 9px 0;
+}
+
+.period-band.is-start.is-end {
+  border-radius: 9px;
+}
+
+.cell-copy {
+  position: relative;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 3px 3px 0 5px;
+  pointer-events: none;
+}
+
+.day-number {
+  color: var(--ink-title);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 13px;
+}
+
+.is-dim .day-number {
+  color: var(--ink-dim-day);
+}
+
+.day-number.is-today {
+  color: var(--ink-today);
+}
+
+.entry-title {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  color: var(--ink-kitty);
+  font-family: var(--font-hand-kitty);
+  font-size: 8px;
+  line-height: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.entry-title.author-master {
+  color: var(--ink-master);
+  font-family: var(--font-hand-master);
+}
+
+.entry-title.author-system {
+  color: var(--ink-system);
+  font-family: var(--font-hand-system);
+  font-size: 5.6px;
+  line-height: 7px;
+}
+
+.special-stamp {
+  position: absolute;
+  z-index: 3;
+  top: 30px;
+  left: 5px;
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+  opacity: 0.72;
+  transform: rotate(-16deg);
+  pointer-events: none;
+}
+
+.new-badge {
+  position: absolute;
+  z-index: 5;
+  right: 3px;
+  bottom: 2px;
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+}
+
+.month-legend {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 12px 8px;
+  color: var(--ink-legend);
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+}
+
+.legend-item,
+.period-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.legend-item i {
+  width: 11px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--ink-kitty);
+}
+
+.legend-item i.author-master {
+  background: var(--ink-master);
+}
+
+.legend-item i.author-system {
+  background: var(--ink-system);
+}
+
+.legend-spacer {
+  flex: 1;
+}
+
+.period-legend {
+  font-family: var(--font-body);
+}
+
+.period-legend i {
+  width: 17px;
+  height: 9px;
+  border-radius: 5px;
+  background: var(--paper-period);
+}
