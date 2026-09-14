@@ -2,5 +2,5 @@
 window.__SHARED_PAGE_CONFIG__ = {
   apiBaseUrl: "/api/v1/calendar",
   token: "replace-at-runtime",
-  productTimeZone: "Asia/Shanghai"
+  productTimeZone: "Asia/Taipei"
 };
