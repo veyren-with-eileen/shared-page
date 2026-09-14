@@ -106,3 +106,15 @@
   cursor: default;
   opacity: 0.45;
 }
+
+.canvas-viewport {
+  position: relative;
+  flex: 0 0 auto;
+  overflow: visible;
+}
+
+.scaled-canvas {
+  width: var(--canvas-width);
+  height: var(--canvas-height);
+  transform-origin: top left;
+}

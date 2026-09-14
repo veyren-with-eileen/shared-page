@@ -74,7 +74,7 @@ describe("Day View materialization", () => {
       events: [
         event({
           id: "cross-month",
-          starts_at: "2026-08-30T16:00:00Z",
+          starts_at: "2026-08-29T16:00:00Z",
           ends_at: "2026-09-02T16:00:00Z",
           precision: "day",
           metadata: { kind: "span" }
@@ -113,8 +113,8 @@ describe("Day View materialization", () => {
   it("maps the UTC instant after 16:00 to the next Asia/Taipei date and maps authors", () => {
     const dtos = parseEventList({
       events: [
-        event({ id: "assistant", created_by: "master", starts_at: "2026-09-14T16:15:00Z" }),
-        event({ id: "auto", created_by: "extractor", starts_at: "2026-09-14T17:00:00Z" })
+        event({ id: "assistant", created_by: "master", starts_at: "2026-09-14T16:15:00Z", ends_at: "2026-09-14T16:45:00Z" }),
+        event({ id: "auto", created_by: "extractor", starts_at: "2026-09-14T17:00:00Z", ends_at: "2026-09-14T17:30:00Z" })
       ]
     });
 

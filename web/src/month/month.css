@@ -334,3 +334,21 @@
   border-radius: 5px;
   background: var(--paper-period);
 }
+
+.month-cell {
+  appearance: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.month-cell:focus-visible,
+.day-strip button:focus-visible,
+.timed-event:focus-visible,
+.all-day-event:focus-visible {
+  z-index: 10;
+  outline: 2px solid var(--ink-kitty);
+  outline-offset: -2px;
+}

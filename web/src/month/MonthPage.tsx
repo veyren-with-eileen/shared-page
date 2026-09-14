@@ -1,4 +1,3 @@
-import { useEffect, useState } from "preact/hooks";
 import type { ConnectionConfig } from "../config/connection";
 import {
   AUTHOR_LABEL,
@@ -20,15 +19,14 @@ import {
   weekRows
 } from "../domain/calendarTime";
 import { useCalendarMonth } from "../state/useCalendarMonth";
+import { CanvasViewport } from "../app/CanvasViewport";
 import "./month.css";
-
-const CANVAS_WIDTH = 402;
-const CANVAS_HEIGHT = 874;
 
 interface MonthPageProps {
   config: ConnectionConfig;
   month: CalendarMonth;
   onMonthChange(month: CalendarMonth): void;
+  onDayOpen(dayKey: string): void;
 }
 
 function authorClass(author: Author): string {
@@ -45,37 +43,14 @@ function periodForDay(payload: MonthPayload, day: number): DayRange | undefined 
   return payload.periods.find((period) => day >= period.start && day <= period.end);
 }
 
-function useCanvasScale(): number {
-  const [scale, setScale] = useState(() => Math.min(1, window.innerWidth / CANVAS_WIDTH));
-
-  useEffect(() => {
-    const updateScale = () => setScale(Math.min(1, window.innerWidth / CANVAS_WIDTH));
-    window.addEventListener("resize", updateScale);
-    return () => window.removeEventListener("resize", updateScale);
-  }, []);
-
-  return scale;
-}
-
-export function MonthPage({ config, month, onMonthChange }: MonthPageProps) {
+export function MonthPage({ config, month, onMonthChange, onDayOpen }: MonthPageProps) {
   const { status, payload, unseenDays, message, retry } = useCalendarMonth(config, month);
-  const scale = useCanvasScale();
   const today = todayInMonth(month);
   const days = monthGrid(month);
 
   return (
-    <div
-      class="canvas-viewport"
-      style={{
-        width: `${CANVAS_WIDTH * scale}px`,
-        height: `${CANVAS_HEIGHT * scale}px`
-      }}
-    >
-      <main
-        class="calendar-canvas"
-        style={{ transform: `scale(${scale})` }}
-        aria-busy={status === "loading"}
-      >
+    <CanvasViewport>
+      <main class="calendar-canvas" aria-busy={status === "loading"}>
         <header class="month-header">
           <div>
             <div class="month-heading">
@@ -124,16 +99,18 @@ export function MonthPage({ config, month, onMonthChange }: MonthPageProps) {
               const unseen = cell.inMonth && unseenDays.has(dayKey(month, cell.day));
 
               return (
-                <div
+                <button
+                  type="button"
                   class={cell.inMonth ? "month-cell" : "month-cell is-dim"}
                   key={cell.key}
-                  aria-label={cell.key}
+                  aria-label={`Open ${cell.key}`}
+                  onClick={() => onDayOpen(cell.key)}
                 >
-                  <div class="grid-paper" aria-hidden="true" />
-                  {!cell.inMonth && <div class="dim-hatch" aria-hidden="true" />}
+                  <span class="grid-paper" aria-hidden="true" />
+                  {!cell.inMonth && <span class="dim-hatch" aria-hidden="true" />}
 
                   {spans.map((span, lane) => (
-                    <div
+                    <span
                       class={`span-band lane-${lane} ${authorClass(span.author)}`}
                       key={span.id}
                       aria-hidden="true"
@@ -141,7 +118,7 @@ export function MonthPage({ config, month, onMonthChange }: MonthPageProps) {
                   ))}
 
                   {period && (
-                    <div
+                    <span
                       class={[
                         "period-band",
                         cell.day === period.start ? "is-start" : "",
@@ -155,7 +132,7 @@ export function MonthPage({ config, month, onMonthChange }: MonthPageProps) {
                     <img class="special-stamp" src="/assets/stamp-heart-mini.png" alt="" aria-hidden="true" />
                   )}
 
-                  <div class="cell-copy">
+                  <span class="cell-copy">
                     <span class={isToday ? "day-number is-today" : "day-number"}>{cell.day}</span>
                     {cell.inMonth &&
                       spans
@@ -173,12 +150,12 @@ export function MonthPage({ config, month, onMonthChange }: MonthPageProps) {
                             {event.title}
                           </span>
                         ))}
-                  </div>
+                  </span>
 
                   {unseen && (
                     <img class="new-badge" src="/assets/red-exclaim-double.png" alt="NEW" />
                   )}
-                </div>
+                </button>
               );
             })}
           </div>
@@ -198,6 +175,6 @@ export function MonthPage({ config, month, onMonthChange }: MonthPageProps) {
           </footer>
         </section>
       </main>
-    </div>
+    </CanvasViewport>
   );
 }

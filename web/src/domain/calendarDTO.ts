@@ -248,7 +248,7 @@ export function materializeDay(dtos: EventDTO[], selectedDay: string): DayPayloa
       continue;
     }
 
-    if (starts >= range.end || ends <= range.start) continue;
+    if (starts.getTime() >= range.end.getTime() || ends.getTime() <= range.start.getTime()) continue;
     const clippedStart = Math.max(starts.getTime(), range.start.getTime());
     const clippedEnd = Math.min(ends.getTime(), range.end.getTime());
 
@@ -258,8 +258,8 @@ export function materializeDay(dtos: EventDTO[], selectedDay: string): DayPayloa
       isSpan: false,
       startMinute: Math.max(0, Math.floor((clippedStart - range.start.getTime()) / 60_000)),
       endMinute: Math.min(1440, Math.ceil((clippedEnd - range.start.getTime()) / 60_000)),
-      continuesBefore: starts < range.start,
-      continuesAfter: ends > range.end,
+      continuesBefore: starts.getTime() < range.start.getTime(),
+      continuesAfter: ends.getTime() > range.end.getTime(),
       spanIndex: null,
       spanLength: null
     });
