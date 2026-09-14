@@ -125,15 +125,15 @@ export function todayInMonth(value: CalendarMonth, now = new Date()): number | n
   return parts.year === value.year && parts.month === value.month ? parts.day : null;
 }
 
-function shanghaiMidnightUtc(value: CalendarMonth): Date {
-  // Modern Asia/Shanghai is fixed at UTC+08:00; this mirrors the iOS product calendar.
+function productMidnightUtc(value: CalendarMonth): Date {
+  // Checkpoint 1 calendar dates use Asia/Taipei (UTC+08:00), matching the product calendar.
   return new Date(Date.UTC(value.year, value.month - 1, 1) - 8 * 60 * 60 * 1000);
 }
 
 export function apiMonthRange(value: CalendarMonth): { from: string; to: string } {
   return {
-    from: shanghaiMidnightUtc(value).toISOString().replace(".000", ""),
-    to: shanghaiMidnightUtc(nextMonth(value)).toISOString().replace(".000", "")
+    from: productMidnightUtc(value).toISOString().replace(".000", ""),
+    to: productMidnightUtc(nextMonth(value)).toISOString().replace(".000", "")
   };
 }
 

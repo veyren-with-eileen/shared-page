@@ -33,7 +33,7 @@ describe("calendar month parity", () => {
     expect(monthGrid({ year: 2026, month: 7 })).toHaveLength(35);
   });
 
-  it("queries Shanghai month boundaries as UTC Z timestamps", () => {
+  it("queries Taipei month boundaries as UTC Z timestamps", () => {
     expect(apiMonthRange({ year: 2026, month: 8 })).toEqual({
       from: "2026-07-31T16:00:00Z",
       to: "2026-08-31T16:00:00Z"
