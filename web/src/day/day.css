@@ -443,3 +443,8 @@
     from { transform: translateY(20px); opacity: 0; }
   }
 }
+
+.all-day-event.author-system strong,
+.timed-event.author-system strong {
+  font-size: 10.2px;
+}

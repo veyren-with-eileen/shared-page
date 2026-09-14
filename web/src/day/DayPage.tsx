@@ -106,6 +106,17 @@ function EventDetail({ event, dateKey, onClose }: { event: DayEvent; dateKey: st
               <dd>day {event.spanIndex} of {event.spanLength}</dd>
             </div>
           )}
+          {(event.continuesBefore || event.continuesAfter) && (
+            <div>
+              <dt>RANGE</dt>
+              <dd>
+                {[
+                  event.continuesBefore ? "continues from the previous day" : "",
+                  event.continuesAfter ? "continues into the next day" : ""
+                ].filter(Boolean).join(" · ")}
+              </dd>
+            </div>
+          )}
         </dl>
         {event.description && <p class="detail-description">{event.description}</p>}
         <button type="button" class="detail-done" onClick={onClose}>done</button>

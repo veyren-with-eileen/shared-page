@@ -17,6 +17,14 @@ describe("calendar URL navigation", () => {
       dayKey: "2026-08-31",
       month: { year: 2026, month: 8 }
     });
+
+    const nextGrayCell = monthGrid({ year: 2026, month: 9 }).at(-1)!;
+    expect(nextGrayCell).toMatchObject({
+      key: "2026-10-04",
+      inMonth: false,
+      month: { year: 2026, month: 10 }
+    });
+    expect(dayRouteUrl(nextGrayCell.key)).toBe("/day/2026-10-04");
   });
 
   it("restores an addressable day and a month query after reload", () => {
