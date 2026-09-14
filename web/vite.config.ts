@@ -1,6 +1,7 @@
 import preact from "@preact/preset-vite";
 import { VitePWA } from "vite-plugin-pwa";
-import { defineConfig, loadEnv } from "vitest/config";
+import { loadEnv } from "vite";
+import { defineConfig } from "vitest/config";
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, ".", "");

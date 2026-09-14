@@ -37,7 +37,7 @@ export function ConnectionSetup({ initial, onConnect }: ConnectionSetupProps) {
             value={apiBaseUrl}
             onInput={(event) => setApiBaseUrl(event.currentTarget.value)}
             placeholder="/api/v1/calendar"
-            autocomplete="url"
+            autoComplete="url"
           />
         </label>
 
@@ -47,7 +47,7 @@ export function ConnectionSetup({ initial, onConnect }: ConnectionSetupProps) {
             value={token}
             onInput={(event) => setToken(event.currentTarget.value)}
             type="password"
-            autocomplete="off"
+            autoComplete="off"
           />
         </label>
 

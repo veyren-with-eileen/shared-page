@@ -1,3 +1,4 @@
+import { useEffect, useState } from "preact/hooks";
 import type { ConnectionConfig } from "../config/connection";
 import {
   AUTHOR_LABEL,
@@ -45,32 +46,16 @@ function periodForDay(payload: MonthPayload, day: number): DayRange | undefined 
 }
 
 function useCanvasScale(): number {
-  const available = () => Math.min(CANVAS_WIDTH, window.innerWidth);
-  const initial = () => Math.min(1, available() / CANVAS_WIDTH);
-  const [scale, setScale] = useStateSafe(initial);
+  const [scale, setScale] = useState(() => Math.min(1, window.innerWidth / CANVAS_WIDTH));
 
-  useWindowResize(() => setScale(initial()));
+  useEffect(() => {
+    const updateScale = () => setScale(Math.min(1, window.innerWidth / CANVAS_WIDTH));
+    window.addEventListener("resize", updateScale);
+    return () => window.removeEventListener("resize", updateScale);
+  }, []);
+
   return scale;
 }
-
-function useStateSafe<T>(initial: () => T) {
-  // Kept local so MonthPage's layout math remains isolated from calendar state.
-  const [value, setValue] = requirePreactState(initial);
-  return [value, setValue] as const;
-}
-
-function requirePreactState<T>(initial: () => T) {
-  return useState(initial);
-}
-
-function useWindowResize(callback: () => void) {
-  useEffect(() => {
-    window.addEventListener("resize", callback);
-    return () => window.removeEventListener("resize", callback);
-  }, [callback]);
-}
-
-import { useEffect, useState } from "preact/hooks";
 
 export function MonthPage({ config, month, onMonthChange }: MonthPageProps) {
   const { status, payload, unseenDays, message, retry } = useCalendarMonth(config, month);
