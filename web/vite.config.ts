@@ -5,6 +5,12 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, ".", "");
+  const calendarProxy = {
+    "/api": {
+      target: env.CALENDAR_PROXY_TARGET || "http://127.0.0.1:8787",
+      changeOrigin: true
+    }
+  };
 
   return {
     plugins: [
@@ -48,12 +54,11 @@ export default defineConfig(({ mode }) => {
     ],
     server: {
       host: true,
-      proxy: {
-        "/api": {
-          target: env.CALENDAR_PROXY_TARGET || "http://127.0.0.1:8787",
-          changeOrigin: true
-        }
-      }
+      proxy: calendarProxy
+    },
+    preview: {
+      host: true,
+      proxy: calendarProxy
     },
     test: {
       environment: "node"
