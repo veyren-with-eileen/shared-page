@@ -99,12 +99,9 @@ export function MonthPage({ config, month, onMonthChange, onDayOpen }: MonthPage
               const unseen = cell.inMonth && unseenDays.has(dayKey(month, cell.day));
 
               return (
-                <button
-                  type="button"
+                <div
                   class={cell.inMonth ? "month-cell" : "month-cell is-dim"}
                   key={cell.key}
-                  aria-label={`Open ${cell.key}`}
-                  onClick={() => onDayOpen(cell.key)}
                 >
                   <span class="grid-paper" aria-hidden="true" />
                   {!cell.inMonth && <span class="dim-hatch" aria-hidden="true" />}
@@ -155,7 +152,13 @@ export function MonthPage({ config, month, onMonthChange, onDayOpen }: MonthPage
                   {unseen && (
                     <img class="new-badge" src="/assets/red-exclaim-double.png" alt="NEW" />
                   )}
-                </button>
+                  <button
+                    class="month-cell-hit-target"
+                    type="button"
+                    aria-label={`Open ${cell.key}`}
+                    onClick={() => onDayOpen(cell.key)}
+                  />
+                </div>
               );
             })}
           </div>
