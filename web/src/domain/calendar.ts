@@ -80,4 +80,28 @@ export interface MonthPayload {
   periods: DayRange[];
 }
 
+export interface DayEvent {
+  id: string;
+  author: Author;
+  title: string;
+  description: string | null;
+  eventType: string | null;
+  isAllDay: boolean;
+  isSpan: boolean;
+  originalStartsAt: string;
+  originalEndsAt: string | null;
+  startMinute: number;
+  endMinute: number;
+  continuesBefore: boolean;
+  continuesAfter: boolean;
+  spanIndex: number | null;
+  spanLength: number | null;
+  revision: number | null;
+}
+
+export interface DayPayload {
+  allDay: DayEvent[];
+  timed: DayEvent[];
+}
+
 export const SPECIAL_DAY_TYPES = new Set(["anniversary", "birthday"]);

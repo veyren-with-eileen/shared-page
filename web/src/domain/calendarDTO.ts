@@ -3,6 +3,8 @@ import {
   type CalendarEvent,
   type CalendarMonth,
   type CalendarSpan,
+  type DayEvent,
+  type DayPayload,
   type DayRange,
   type EventDTO,
   type JsonValue,
@@ -10,9 +12,11 @@ import {
 } from "./calendar";
 import {
   dayIndex,
+  daySerialFromKey,
   daysInMonth,
   monthFirstSerial,
   productDateParts,
+  productDayRange,
   productDaySerial
 } from "./calendarTime";
 
@@ -94,16 +98,21 @@ function clipRange(start: number, end: number, month: CalendarMonth): DayRange |
   return clipped.start <= clipped.end ? clipped : null;
 }
 
-function effectiveEndDayIndex(
-  ends: Date,
-  month: CalendarMonth,
-  isAllDay: boolean
-): number {
+function effectiveEndDayIndex(ends: Date, month: CalendarMonth, isAllDay: boolean): number {
   if (isAllDay) {
-    // iOS first snaps a day-precision end to its product-zone midnight, then subtracts one second.
     return productDaySerial(ends) - 1 - monthFirstSerial(month) + 1;
   }
   return dayIndex(new Date(ends.getTime() - 1000), month);
+}
+
+function eventEnd(dto: EventDTO, starts: Date, isAllDay: boolean): Date {
+  const fallbackDuration = isAllDay ? 86_400_000 : 3_600_000;
+  const parsed = dto.endsAt ? new Date(dto.endsAt) : new Date(starts.getTime() + fallbackDuration);
+  return Number.isNaN(parsed.getTime()) ? new Date(starts.getTime() + fallbackDuration) : parsed;
+}
+
+function isActive(dto: EventDTO): boolean {
+  return (dto.status ?? "active") === "active" && dto.deletedAt === null;
 }
 
 export function materializeEvents(dtos: EventDTO[], month: CalendarMonth): MonthPayload {
@@ -114,18 +123,13 @@ export function materializeEvents(dtos: EventDTO[], month: CalendarMonth): Month
   };
 
   for (const dto of dtos) {
-    if ((dto.status ?? "active") !== "active") continue;
+    if (!isActive(dto)) continue;
 
     const starts = new Date(dto.startsAt);
     if (Number.isNaN(starts.getTime())) continue;
 
     const isAllDay = (dto.precision ?? "hour") === "day";
-    const fallbackDuration = isAllDay ? 86_400_000 : 3_600_000;
-    const parsedEnds = dto.endsAt ? new Date(dto.endsAt) : new Date(starts.getTime() + fallbackDuration);
-    const ends = Number.isNaN(parsedEnds.getTime())
-      ? new Date(starts.getTime() + fallbackDuration)
-      : parsedEnds;
-
+    const ends = eventEnd(dto, starts, isAllDay);
     const start = dayIndex(starts, month);
     const end = Math.max(start, effectiveEndDayIndex(ends, month, isAllDay));
     const isPeriod = (dto.eventType ?? "") === "period";
@@ -194,5 +198,77 @@ export function materializeEvents(dtos: EventDTO[], month: CalendarMonth): Month
   });
   payload.periods.sort((a, b) => a.start - b.start);
 
+  return payload;
+}
+
+export function materializeDay(dtos: EventDTO[], selectedDay: string): DayPayload {
+  const range = productDayRange(selectedDay);
+  const selectedSerial = daySerialFromKey(selectedDay);
+  if (!range || selectedSerial === null) throw new Error("selected day must be YYYY-MM-DD");
+
+  const payload: DayPayload = { allDay: [], timed: [] };
+
+  for (const dto of dtos) {
+    if (!isActive(dto) || dto.eventType === "period") continue;
+
+    const starts = new Date(dto.startsAt);
+    if (Number.isNaN(starts.getTime())) continue;
+
+    const allDay = (dto.precision ?? "hour") === "day";
+    const ends = eventEnd(dto, starts, allDay);
+    if (ends.getTime() <= starts.getTime()) continue;
+
+    const common = {
+      id: dto.id,
+      author: authorFromWire(dto.createdBy),
+      title: dto.title,
+      description: dto.description,
+      eventType: dto.eventType,
+      originalStartsAt: dto.startsAt,
+      originalEndsAt: dto.endsAt,
+      revision: dto.revision
+    };
+
+    if (allDay) {
+      const startSerial = productDaySerial(starts);
+      const endExclusiveSerial = Math.max(startSerial + 1, productDaySerial(ends));
+      if (selectedSerial < startSerial || selectedSerial >= endExclusiveSerial) continue;
+      const spanLength = endExclusiveSerial - startSerial;
+      payload.allDay.push({
+        ...common,
+        isAllDay: true,
+        isSpan: metadataKind(dto.metadata) === "span" || spanLength > 1,
+        startMinute: 0,
+        endMinute: 1440,
+        continuesBefore: selectedSerial > startSerial,
+        continuesAfter: selectedSerial + 1 < endExclusiveSerial,
+        spanIndex: spanLength > 1 ? selectedSerial - startSerial + 1 : null,
+        spanLength: spanLength > 1 ? spanLength : null
+      });
+      continue;
+    }
+
+    if (starts >= range.end || ends <= range.start) continue;
+    const clippedStart = Math.max(starts.getTime(), range.start.getTime());
+    const clippedEnd = Math.min(ends.getTime(), range.end.getTime());
+
+    payload.timed.push({
+      ...common,
+      isAllDay: false,
+      isSpan: false,
+      startMinute: Math.max(0, Math.floor((clippedStart - range.start.getTime()) / 60_000)),
+      endMinute: Math.min(1440, Math.ceil((clippedEnd - range.start.getTime()) / 60_000)),
+      continuesBefore: starts < range.start,
+      continuesAfter: ends > range.end,
+      spanIndex: null,
+      spanLength: null
+    });
+  }
+
+  payload.allDay.sort((a, b) => {
+    if (a.isSpan !== b.isSpan) return a.isSpan ? -1 : 1;
+    return a.title.localeCompare(b.title);
+  });
+  payload.timed.sort((a, b) => a.startMinute - b.startMinute || a.endMinute - b.endMinute);
   return payload;
 }

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "preact/hooks";
 import type { ConnectionConfig } from "../config/connection";
-import type { CalendarMonth, MonthPayload } from "../domain/calendar";
+import type { CalendarMonth, EventDTO, MonthPayload } from "../domain/calendar";
 import { materializeEvents } from "../domain/calendarDTO";
 import { monthKey } from "../domain/calendarTime";
 import {
@@ -31,6 +31,7 @@ function errorMessage(error: unknown): string {
 
 export function useCalendarMonth(config: ConnectionConfig, month: CalendarMonth) {
   const [status, setStatus] = useState<LoadStatus>("idle");
+  const [dtos, setDtos] = useState<EventDTO[]>([]);
   const [payload, setPayload] = useState<MonthPayload>(emptyPayload);
   const [unseenDays, setUnseenDays] = useState<Set<string>>(new Set());
   const [message, setMessage] = useState("tap a day to open it");
@@ -41,6 +42,7 @@ export function useCalendarMonth(config: ConnectionConfig, month: CalendarMonth)
   useEffect(() => {
     if (!config.token) {
       setStatus("idle");
+      setDtos([]);
       setPayload(emptyPayload());
       setUnseenDays(new Set());
       setMessage("calendar connection required");
@@ -57,6 +59,7 @@ export function useCalendarMonth(config: ConnectionConfig, month: CalendarMonth)
     ])
       .then(([events, unseen]) => {
         if (controller.signal.aborted) return;
+        setDtos(events);
         setPayload(materializeEvents(events, month));
         setUnseenDays(unseen);
         setStatus("ready");
@@ -64,6 +67,7 @@ export function useCalendarMonth(config: ConnectionConfig, month: CalendarMonth)
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
+        setDtos([]);
         setPayload(emptyPayload());
         setStatus("error");
         setMessage(errorMessage(error));
@@ -72,5 +76,5 @@ export function useCalendarMonth(config: ConnectionConfig, month: CalendarMonth)
     return () => controller.abort();
   }, [config.apiBaseUrl, config.token, monthKey(month), revision]);
 
-  return { status, payload, unseenDays, message, retry };
+  return { status, dtos, payload, unseenDays, message, retry };
 }
