@@ -29,7 +29,7 @@ npm run dev
 
 The dev server proxies `/api/*` to `CALENDAR_PROXY_TARGET`. Keep the API base URL in the connection screen as `/api/v1/calendar`, then enter the existing calendar token. Values entered in the UI are stored in `sessionStorage` only: they disappear when the tab session ends and are never written into Git.
 
-For a managed runtime, copy `public/runtime-config.example.js` to the ignored `public/runtime-config.js`, or serve an equivalent script at `/runtime-config.js`. Never commit the real token.
+For a managed runtime, use `public/runtime-config.example.js` as the template and serve the populated file as `/runtime-config.js` after the app build. It is loaded optionally and excluded from the service-worker precache. Never commit the real token.
 
 For production, serve the PWA and proxy `/api/v1/calendar/*` to the existing backend on the same origin. Direct cross-origin browser access requires backend CORS support and is not assumed by this checkpoint.
 

@@ -3,5 +3,17 @@ import { App } from "./app/App";
 import { registerServiceWorker } from "./pwa/registerServiceWorker";
 import "./styles/global.css";
 
-render(<App />, document.getElementById("app")!);
-registerServiceWorker();
+async function bootstrap() {
+  const runtimeConfigUrl = "/runtime-config.js";
+
+  try {
+    await import(/* @vite-ignore */ runtimeConfigUrl);
+  } catch {
+    // Runtime config is optional; the in-app connection form remains available.
+  }
+
+  render(<App />, document.getElementById("app")!);
+  registerServiceWorker();
+}
+
+void bootstrap();
