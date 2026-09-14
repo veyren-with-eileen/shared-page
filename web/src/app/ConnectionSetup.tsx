@@ -17,11 +17,7 @@ export function ConnectionSetup({ initial, onConnect }: ConnectionSetupProps) {
         onSubmit={(event) => {
           event.preventDefault();
           if (!token.trim()) return;
-          onConnect({
-            apiBaseUrl,
-            token,
-            productTimeZone: initial.productTimeZone
-          });
+          onConnect({ apiBaseUrl, token });
         }}
       >
         <p class="connection-kicker">shared-page</p>
@@ -52,7 +48,7 @@ export function ConnectionSetup({ initial, onConnect }: ConnectionSetupProps) {
         </label>
 
         <button type="submit" disabled={!token.trim()}>
-          Open month
+          Open calendar
         </button>
       </form>
     </main>

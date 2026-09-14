@@ -1,4 +1,4 @@
-export const PRODUCT_TIME_ZONE = "Asia/Taipei";
+export const PRODUCT_TIME_ZONE = "Asia/Taipei" as const;
 
 export type Author = "kitty" | "master" | "system";
 
