@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
-import { createCalendarGateway } from "../api/calendarAPI";
+import { createCalendarGateway, uploadCalendarPage } from "../api/calendarAPI";
 import {
   clearSessionConnection,
   loadConnection,
@@ -12,6 +12,8 @@ import { MonthPage } from "../month/MonthPage";
 import { CalendarStore } from "../state/calendarStore";
 import { IndexedDbScrapbookRepository } from "../persistence/scrapbookRepository";
 import { ScrapbookStore } from "../state/scrapbookStore";
+import { PageSync } from "../snapshot/pageSync";
+import { renderCalendarPage } from "../snapshot/renderPage";
 import { ConnectionSetup } from "./ConnectionSetup";
 import {
   dayRouteUrl,
@@ -35,16 +37,23 @@ export function App() {
   const [connection, setConnection] = useState<ConnectionConfig>(loadConnection);
   const [editingConnection, setEditingConnection] = useState(!connection.token);
   const [route, setRoute] = useState<AppRoute>(() => routeFromUrl(new URL(window.location.href)));
-  const calendar = useMemo(
-    () => new CalendarStore(createCalendarGateway(connection)),
-    [connection.apiBaseUrl, connection.token]
-  );
-  const scrapbook = useMemo(
-    () => new ScrapbookStore(new IndexedDbScrapbookRepository()),
-    []
-  );
+  const services = useMemo(() => {
+    let calendar!: CalendarStore;
+    let scrapbook!: ScrapbookStore;
+    const pageSync = new PageSync(
+      (day) => renderCalendarPage(calendar, scrapbook, day),
+      (day, png) => uploadCalendarPage(connection, day, png)
+    );
+    calendar = new CalendarStore(createCalendarGateway(connection), pageSync);
+    scrapbook = new ScrapbookStore(new IndexedDbScrapbookRepository(), pageSync);
+    return { calendar, scrapbook, pageSync };
+  }, [connection.apiBaseUrl, connection.token]);
+  const { calendar, scrapbook, pageSync } = services;
 
-  useEffect(() => () => calendar.dispose(), [calendar]);
+  useEffect(() => {
+    pageSync.attachLifecycle();
+    return () => { pageSync.dispose(); calendar.dispose(); };
+  }, [calendar, pageSync]);
   useEffect(() => {
     void scrapbook.hydrate();
     return () => scrapbook.dispose();
@@ -56,10 +65,14 @@ export function App() {
       window.history.replaceState({ sharedPage: true, index: 0 }, "", window.location.href);
     }
 
-    const restore = () => setRoute(routeFromUrl(new URL(window.location.href)));
+    const restore = () => setRoute((current) => {
+      const next = routeFromUrl(new URL(window.location.href));
+      if (current.kind === "day" && next.kind === "month") void pageSync.flush();
+      return next;
+    });
     window.addEventListener("popstate", restore);
     return () => window.removeEventListener("popstate", restore);
-  }, []);
+  }, [pageSync]);
 
   function pushRoute(next: AppRoute, url: string, monthIndex?: number) {
     const current = currentNavigationState();
@@ -81,6 +94,7 @@ export function App() {
   }
 
   function backToMonth() {
+    void pageSync.flush();
     const state = currentNavigationState();
     if (
       typeof state.monthIndex === "number" &&

@@ -2,6 +2,7 @@ import type { ConnectionConfig } from "../config/connection";
 import type { CalendarMonth, EventDTO, EventWritePayload, NoteDTO, NoteWritePayload } from "../domain/calendar";
 import { parseEventDTO, parseEventList, parseNoteDTO, parseNoteList } from "../domain/calendarDTO";
 import { apiMonthRange, dayKey, nextMonth } from "../domain/calendarTime";
+import { isValidPageDayKey } from "../snapshot/pageDirty";
 
 export class CalendarApiError extends Error {
   constructor(
@@ -154,6 +155,45 @@ export async function deleteCalendarEvent(
 
 export async function markCalendarDaySeen(config: ConnectionConfig, day: string): Promise<void> {
   await requestJson(config, "unseen/seen", undefined, undefined, "POST", { date: day });
+}
+
+export async function uploadCalendarPage(
+  config: ConnectionConfig,
+  day: string,
+  png: Blob,
+  signal?: AbortSignal
+): Promise<void> {
+  if (!isValidPageDayKey(day)) throw new CalendarApiError("Page date must be YYYY-MM-DD.", "bad-request");
+  if (png.type !== "image/png") throw new CalendarApiError("Page render must be a PNG.", "bad-request");
+
+  const controller = new AbortController();
+  const timeout = globalThis.setTimeout(() => controller.abort(), 12_000);
+  const abort = () => controller.abort();
+  signal?.addEventListener("abort", abort, { once: true });
+  const form = new FormData();
+  form.append("file", png, `${day}.png`);
+
+  try {
+    const response = await fetch(apiUrl(config.apiBaseUrl, `pages/${encodeURIComponent(day)}/render`), {
+      method: "POST",
+      headers: { Accept: "application/json", "X-Calendar-Token": config.token },
+      body: form,
+      cache: "no-store",
+      credentials: "omit",
+      signal: controller.signal
+    });
+    if (response.ok) return;
+    if (response.status === 401 || response.status === 403) throw new CalendarApiError("Calendar token was rejected.", "unauthorized", response.status);
+    if (response.status === 400 || response.status === 413 || response.status === 422) throw new CalendarApiError("Page render was rejected.", "bad-request", response.status);
+    throw new CalendarApiError(`Calendar server returned ${response.status}.`, "server", response.status);
+  } catch (error) {
+    if (error instanceof CalendarApiError) throw error;
+    if (signal?.aborted) throw error;
+    throw new CalendarApiError("Could not upload the page render.", "offline");
+  } finally {
+    globalThis.clearTimeout(timeout);
+    signal?.removeEventListener("abort", abort);
+  }
 }
 
 export function createCalendarGateway(config: ConnectionConfig): CalendarGateway {

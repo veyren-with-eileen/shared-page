@@ -9,6 +9,7 @@ import {
 } from "../domain/scrapbook";
 import type { ProcessedImage } from "../scrapbook/imageProcessing";
 import type { ScrapbookRepository } from "../persistence/scrapbookRepository";
+import { NOOP_PAGE_DIRTY, type PageDirtySink } from "../snapshot/pageDirty";
 
 export type ScrapbookStatus = "idle" | "loading" | "ready" | "error";
 
@@ -30,7 +31,10 @@ export class ScrapbookStore {
   private status: ScrapbookStatus = "idle";
   private message: string | null = null;
 
-  constructor(private readonly repository: ScrapbookRepository) {}
+  constructor(
+    private readonly repository: ScrapbookRepository,
+    private readonly pageDirty: PageDirtySink = NOOP_PAGE_DIRTY
+  ) {}
 
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
@@ -109,12 +113,16 @@ export class ScrapbookStore {
   private replace(item: PlacedItem | null, previousId?: string) {
     const id = previousId ?? item?.id;
     if (!id) return;
+    const before = [...this.byDay.values()].flat().find((entry) => entry.id === id || entry.id === item?.id);
     for (const [day, list] of this.byDay) {
       const next = list.filter((entry) => entry.id !== id && entry.id !== item?.id);
       if (next.length) this.byDay.set(day, next);
       else this.byDay.delete(day);
     }
     if (item) this.byDay.set(item.dayKey, [...(this.byDay.get(item.dayKey) ?? []), item]);
+    for (const day of new Set([before?.dayKey, item?.dayKey].filter((value): value is string => Boolean(value)))) {
+      this.pageDirty.markDirty(day);
+    }
     this.emit();
   }
 

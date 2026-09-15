@@ -12,6 +12,8 @@ import {
   spanPatchPayload
 } from "../domain/spanWrite";
 import { createNotePayload, noteFromDTO, provisionalNote } from "../domain/noteWrite";
+import { materializeDay } from "../domain/calendarDTO";
+import { NOOP_PAGE_DIRTY, eventRenderedDayKeys, markEventTransition, type PageDirtySink } from "../snapshot/pageDirty";
 
 export type LoadStatus = "idle" | "loading" | "ready" | "error";
 
@@ -98,7 +100,10 @@ export class CalendarStore {
   private seenVersion = 0;
   private mutationMessage: string | null = null;
 
-  constructor(private readonly gateway: CalendarGateway) {}
+  constructor(
+    private readonly gateway: CalendarGateway,
+    private readonly pageDirty: PageDirtySink = NOOP_PAGE_DIRTY
+  ) {}
 
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
@@ -130,6 +135,19 @@ export class CalendarStore {
       message: state.message,
       mutationMessage: this.mutationMessage
     };
+  }
+
+  pageState(dayKey: string) {
+    const ids = new Set<string>(this.canonicalEvents.keys());
+    for (const state of this.months.values()) for (const dto of state.dtos) ids.add(dto.id);
+    const dtos = [...ids].map((id) => this.event(id)).filter((dto): dto is EventDTO => dto !== null);
+    const noteIds = new Set<string>(this.canonicalNotes.keys());
+    for (const state of this.months.values()) for (const note of state.notes) noteIds.add(note.id);
+    const notes = [...noteIds]
+      .map((id) => this.note(id))
+      .filter((note): note is CalendarNote => note !== null && note.anchorDate === dayKey)
+      .sort((a, b) => (a.y ?? 0) - (b.y ?? 0));
+    return { payload: materializeDay(dtos, dayKey), notes };
   }
 
   private notesForMonth(notes: CalendarNote[], month: CalendarMonth): Map<number, CalendarNote[]> {
@@ -233,6 +251,7 @@ export class CalendarStore {
   }
 
   private replaceEvent(id: string, replacement: EventDTO | null) {
+    const before = this.event(id);
     for (const [key, state] of this.months) {
       const monthParts = /^(\d{4})-(\d{2})$/.exec(key)!;
       const month = { year: Number(monthParts[1]), month: Number(monthParts[2]) };
@@ -242,10 +261,12 @@ export class CalendarStore {
     const version = ++this.mutationVersion;
     this.mutatedAtVersion.set(id, version);
     if (replacement) this.mutatedAtVersion.set(replacement.id, version);
+    markEventTransition(this.pageDirty, before, replacement);
     this.emit();
   }
 
-  private replaceNote(id: string, replacement: CalendarNote | null) {
+  private replaceNote(id: string, replacement: CalendarNote | null, markDirty = true) {
+    const before = this.note(id);
     for (const [key, state] of this.months) {
       const without = state.notes.filter((note) => note.id !== id && note.id !== replacement?.id);
       state.notes = replacement && replacement.anchorDate.startsWith(`${key}-`) ? [...without, replacement] : without;
@@ -253,6 +274,11 @@ export class CalendarStore {
     const version = ++this.noteMutationVersion;
     this.noteMutatedAtVersion.set(id, version);
     if (replacement) this.noteMutatedAtVersion.set(replacement.id, version);
+    if (markDirty) {
+      for (const day of new Set([before?.anchorDate, replacement?.anchorDate].filter((value): value is string => Boolean(value)))) {
+        this.pageDirty.markDirty(day);
+      }
+    }
     this.emit();
   }
 
@@ -345,7 +371,8 @@ export class CalendarStore {
     const generation = (this.mutationGenerations.get(id) ?? 0) + 1;
     this.mutationGenerations.set(id, generation);
     this.mutationMessage = null;
-    this.replaceEvent(id, optimisticEvent(before, payload));
+    const optimistic = optimisticEvent(before, payload);
+    this.replaceEvent(id, optimistic);
 
     let result: EventDTO | null = null;
     const previous = this.mutationQueues.get(id) ?? Promise.resolve();
@@ -379,11 +406,11 @@ export class CalendarStore {
     if (!before || id.startsWith("local_")) return Promise.resolve(false);
     const generation = (this.mutationGenerations.get(id) ?? 0) + 1;
     this.mutationGenerations.set(id, generation);
-    this.optimisticDeletes.add(id);
     const linkedNotes = [...this.months.values()].flatMap((state) => state.notes).filter((note) => note.linkedEventId === id);
     for (const note of linkedNotes) this.replaceNote(note.id, { ...note, linkedEventId: null });
     this.mutationMessage = null;
     this.replaceEvent(id, null);
+    this.optimisticDeletes.add(id);
 
     let deleted = false;
     const previous = this.mutationQueues.get(id) ?? Promise.resolve();
@@ -423,7 +450,8 @@ export class CalendarStore {
     const pending: PendingSpanCreate = {};
     this.pendingSpanCreates.set(tempId, pending);
     this.mutationMessage = null;
-    this.replaceEvent(tempId, provisionalSpan(payload, tempId));
+    const provisional = provisionalSpan(payload, tempId);
+    this.replaceEvent(tempId, provisional);
 
     try {
       const created = await this.gateway.createEvent(payload);
@@ -523,6 +551,7 @@ export class CalendarStore {
   async removeSpanDay(span: CalendarSpan, month: CalendarMonth, day: number): Promise<boolean> {
     const before = this.event(span.id);
     if (!before || span.id.startsWith("local_")) return false;
+    for (const key of eventRenderedDayKeys(before)) this.pageDirty.markDirty(key);
     const plan = removeSpanDayPlan(span, month, day);
     if (plan.kind === "delete") return this.deleteSpan(span);
     if (plan.kind === "patch") return (await this.updateSpanPayload(span.id, plan.patch, before)) !== null;
@@ -560,7 +589,7 @@ export class CalendarStore {
 
   addBlankNote(anchorDate: string, y: number): CalendarNote {
     const note = provisionalNote(anchorDate, y);
-    this.replaceNote(note.id, note);
+    this.replaceNote(note.id, note, false);
     return note;
   }
 
