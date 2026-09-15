@@ -45,6 +45,7 @@ export interface EventWritePayload {
   starts_at: string;
   ends_at: string;
   precision: "hour" | "day";
+  metadata?: JsonValue;
 }
 
 export interface EventDraft {
@@ -82,6 +83,13 @@ export interface CalendarSpan {
   endDay: number;
   clip?: CalendarSpanClip;
   revision: number | null;
+}
+
+export interface SpanDraft {
+  title: string;
+  month: CalendarMonth;
+  startDay: number;
+  endDay: number;
 }
 
 export interface DayRange {

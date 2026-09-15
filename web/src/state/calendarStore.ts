@@ -1,9 +1,16 @@
 import type { CalendarGateway } from "../api/calendarAPI";
 import { CalendarApiError } from "../api/calendarAPI";
-import type { CalendarMonth, EventDTO, EventDraft, MonthPayload } from "../domain/calendar";
+import type { CalendarMonth, CalendarSpan, EventDTO, EventDraft, EventWritePayload, MonthPayload, SpanDraft } from "../domain/calendar";
 import { materializeEvents } from "../domain/calendarDTO";
 import { eventWritePayload, optimisticEvent, provisionalEvent } from "../domain/eventWrite";
 import { apiMonthRange, monthKey } from "../domain/calendarTime";
+import {
+  optimisticSpan,
+  provisionalSpan,
+  removeSpanDayPlan,
+  spanCreatePayload,
+  spanPatchPayload
+} from "../domain/spanWrite";
 
 export type LoadStatus = "idle" | "loading" | "ready" | "error";
 
@@ -13,6 +20,10 @@ interface MonthState {
   message: string;
   requestSequence: number;
   controller?: AbortController;
+}
+
+interface PendingSpanCreate {
+  intent?: { kind: "update"; payload: EventWritePayload } | { kind: "delete" };
 }
 
 export interface CalendarSnapshot {
@@ -65,6 +76,8 @@ export class CalendarStore {
   private readonly canonicalEvents = new Map<string, EventDTO>();
   private readonly mutatedAtVersion = new Map<string, number>();
   private readonly optimisticDeletes = new Set<string>();
+  private readonly pendingSpanCreates = new Map<string, PendingSpanCreate>();
+  private readonly pendingSpanSplits = new Set<string>();
   private readonly seenGenerations = new Map<string, number>();
   private readonly seenAtVersion = new Map<string, number>();
   private unseenDays = new Set<string>();
@@ -177,7 +190,7 @@ export class CalendarStore {
   }
 
   isPending(id: string): boolean {
-    return id.startsWith("local_") || this.mutationQueues.has(id);
+    return id.startsWith("local_") || this.mutationQueues.has(id) || this.pendingSpanSplits.has(id);
   }
 
   clearMutationMessage() {
@@ -196,6 +209,41 @@ export class CalendarStore {
     this.mutatedAtVersion.set(id, version);
     if (replacement) this.mutatedAtVersion.set(replacement.id, version);
     this.emit();
+  }
+
+  private failMutation(error: unknown, replacement?: { id: string; event: EventDTO | null }) {
+    if (replacement) this.replaceEvent(replacement.id, replacement.event);
+    this.mutationMessage = mutationErrorMessage(error);
+    this.emit();
+  }
+
+  private async reloadCanonicalMonth(month: CalendarMonth): Promise<void> {
+    const state = this.state(month);
+    state.controller?.abort();
+    const controller = new AbortController();
+    state.controller = controller;
+    const sequence = ++state.requestSequence;
+    state.status = "loading";
+    state.message = "syncing…";
+    this.emit();
+    try {
+      const [events, unseen] = await Promise.all([
+        this.gateway.listMonth(month, controller.signal),
+        this.gateway.listUnseen(controller.signal)
+      ]);
+      if (controller.signal.aborted || sequence !== state.requestSequence) return;
+      state.dtos = events;
+      for (const event of events) this.canonicalEvents.set(event.id, event);
+      this.unseenDays = unseen;
+      state.status = "ready";
+      state.message = "tap a day to open it";
+      this.emit();
+    } catch (error) {
+      if (controller.signal.aborted || sequence !== state.requestSequence) return;
+      state.status = "error";
+      state.message = loadErrorMessage(error);
+      this.emit();
+    }
   }
 
   async createEvent(draft: EventDraft): Promise<EventDTO | null> {
@@ -287,6 +335,147 @@ export class CalendarStore {
         this.emit();
       }
     }).then(() => deleted);
+  }
+
+  async createSpan(draft: SpanDraft): Promise<EventDTO | null> {
+    const payload = spanCreatePayload(draft);
+    const tempId = `local_span_${crypto.randomUUID()}`;
+    const pending: PendingSpanCreate = {};
+    this.pendingSpanCreates.set(tempId, pending);
+    this.mutationMessage = null;
+    this.replaceEvent(tempId, provisionalSpan(payload, tempId));
+
+    try {
+      const created = await this.gateway.createEvent(payload);
+      this.canonicalEvents.set(created.id, created);
+      const intent = pending.intent;
+      if (intent?.kind === "delete") {
+        this.replaceEvent(tempId, null);
+        try {
+          await this.gateway.deleteEvent(created.id);
+          this.canonicalEvents.delete(created.id);
+          return null;
+        } catch (error) {
+          this.replaceEvent(tempId, created);
+          this.failMutation(error);
+          return created;
+        }
+      }
+      if (intent?.kind === "update") {
+        this.replaceEvent(tempId, optimisticSpan(created, intent.payload));
+        try {
+          const updated = await this.gateway.updateEvent(created.id, intent.payload);
+          this.canonicalEvents.set(updated.id, updated);
+          this.replaceEvent(created.id, updated);
+          return updated;
+        } catch (error) {
+          this.replaceEvent(created.id, created);
+          this.failMutation(error);
+          return created;
+        }
+      }
+      this.replaceEvent(tempId, created);
+      return created;
+    } catch (error) {
+      this.replaceEvent(tempId, null);
+      this.failMutation(error);
+      return null;
+    } finally {
+      this.pendingSpanCreates.delete(tempId);
+      this.emit();
+    }
+  }
+
+  updateSpan(span: CalendarSpan, draft: SpanDraft): Promise<EventDTO | null> {
+    const before = this.event(span.id);
+    if (!before) return Promise.resolve(null);
+    const payload = spanPatchPayload(span, draft);
+    const pending = this.pendingSpanCreates.get(span.id);
+    if (pending) {
+      pending.intent = { kind: "update", payload };
+      this.replaceEvent(span.id, optimisticSpan(before, payload));
+      return Promise.resolve(this.event(span.id));
+    }
+    return this.updateSpanPayload(span.id, payload, before);
+  }
+
+  private updateSpanPayload(id: string, payload: EventWritePayload, before: EventDTO): Promise<EventDTO | null> {
+    const generation = (this.mutationGenerations.get(id) ?? 0) + 1;
+    this.mutationGenerations.set(id, generation);
+    this.mutationMessage = null;
+    this.replaceEvent(id, optimisticSpan(before, payload));
+    let result: EventDTO | null = null;
+    const previous = this.mutationQueues.get(id) ?? Promise.resolve();
+    const queued = previous.catch(() => undefined).then(async () => {
+      try {
+        const canonical = await this.gateway.updateEvent(id, payload);
+        this.canonicalEvents.set(id, canonical);
+        if (this.mutationGenerations.get(id) === generation) {
+          this.replaceEvent(id, canonical);
+          result = canonical;
+        }
+      } catch (error) {
+        if (this.mutationGenerations.get(id) === generation) {
+          this.replaceEvent(id, this.canonicalEvents.get(id) ?? before);
+          this.failMutation(error);
+        }
+      }
+    });
+    this.mutationQueues.set(id, queued);
+    return queued.finally(() => {
+      if (this.mutationQueues.get(id) === queued) {
+        this.mutationQueues.delete(id);
+        this.emit();
+      }
+    }).then(() => result);
+  }
+
+  deleteSpan(span: CalendarSpan): Promise<boolean> {
+    const pending = this.pendingSpanCreates.get(span.id);
+    if (pending) {
+      pending.intent = { kind: "delete" };
+      this.replaceEvent(span.id, null);
+      return Promise.resolve(true);
+    }
+    return this.deleteEvent(span.id);
+  }
+
+  async removeSpanDay(span: CalendarSpan, month: CalendarMonth, day: number): Promise<boolean> {
+    const before = this.event(span.id);
+    if (!before || span.id.startsWith("local_")) return false;
+    const plan = removeSpanDayPlan(span, month, day);
+    if (plan.kind === "delete") return this.deleteSpan(span);
+    if (plan.kind === "patch") return (await this.updateSpanPayload(span.id, plan.patch, before)) !== null;
+
+    const tailId = `local_span_${crypto.randomUUID()}`;
+    this.pendingSpanSplits.add(span.id);
+    this.mutationMessage = null;
+    this.replaceEvent(span.id, optimisticSpan(before, plan.patch));
+    this.replaceEvent(tailId, provisionalSpan(plan.create, tailId, before.createdBy ?? "kitty"));
+    try {
+      const tail = await this.gateway.createEvent(plan.create);
+      this.canonicalEvents.set(tail.id, tail);
+      this.replaceEvent(tailId, tail);
+      try {
+        const head = await this.gateway.updateEvent(span.id, plan.patch);
+        this.canonicalEvents.set(head.id, head);
+        this.replaceEvent(span.id, head);
+        return true;
+      } catch {
+        this.mutationMessage = "span split was only partly saved · reloading server truth";
+        this.emit();
+        await this.reloadCanonicalMonth(month);
+        return false;
+      }
+    } catch (error) {
+      this.replaceEvent(tailId, null);
+      this.replaceEvent(span.id, before);
+      this.failMutation(error);
+      return false;
+    } finally {
+      this.pendingSpanSplits.delete(span.id);
+      this.emit();
+    }
   }
 
   async markSeen(day: string): Promise<void> {
