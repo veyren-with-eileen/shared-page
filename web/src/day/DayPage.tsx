@@ -121,7 +121,7 @@ export function DayPage({ store, dateKey, onBack, onDayChange }: DayPageProps) {
   }
 
   return (
-    <CanvasViewport>
+    <CanvasViewport fitViewportHeight>
       <main class="calendar-canvas day-canvas" aria-busy={status === "loading"}>
         <header class="day-back-header"><button type="button" onClick={onBack} aria-label={`Back to ${monthLabel(month)}`}><span>‹</span>{monthLabel(month)}</button></header>
         <nav class="day-strip" aria-label="Nearby dates">

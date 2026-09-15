@@ -1,8 +1,8 @@
 .day-canvas {
   position: relative;
   display: flex;
-  height: var(--canvas-height);
-  min-height: var(--canvas-height);
+  height: 100%;
+  min-height: 0;
   flex-direction: column;
   overflow: hidden;
   background: #fff;
