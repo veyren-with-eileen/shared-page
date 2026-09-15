@@ -226,6 +226,8 @@
   scrollbar-width: thin;
   scrollbar-color: var(--paper-border) transparent;
 }
+.day-timeline.is-note-busy { overflow-y: hidden; }
+.note-position { position: absolute; z-index: 7; width: 174px; height: 0; }
 
 .timeline-content {
   position: relative;
@@ -496,6 +498,7 @@
 
 .event-fab.is-open .event-fab-main span { transform: rotate(135deg); }
 .event-fab-action img { width: 21px; height: 21px; object-fit: contain; filter: brightness(0) invert(1); }
+.note-fab-action span { color: #fff; font: 24px/1 var(--font-body); transform: rotate(-4deg); }
 
 @media (prefers-reduced-motion: no-preference) {
   .event-fab-action { animation: fab-in 220ms cubic-bezier(.2, .9, .3, 1.25); }

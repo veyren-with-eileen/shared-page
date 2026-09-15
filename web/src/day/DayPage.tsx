@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "preact/hooks";
-import { AUTHOR_LABEL, SPECIAL_DAY_TYPES, type Author, type CalendarSpan, type DayEvent, type EventDTO, type EventDraft } from "../domain/calendar";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { AUTHOR_LABEL, SPECIAL_DAY_TYPES, type Author, type CalendarNote, type CalendarSpan, type DayEvent, type EventDTO, type EventDraft } from "../domain/calendar";
 import { materializeDay } from "../domain/calendarDTO";
 import { adjacentDayKey, currentProductDay, monthFromDayKey, monthLabel, parseDayKey, productDateParts, weekdayLabelForDay, weekdayLetterForDay } from "../domain/calendarTime";
 import { useCalendarMonth } from "../state/useCalendarMonth";
@@ -7,6 +7,8 @@ import type { CalendarStore } from "../state/calendarStore";
 import { CanvasViewport } from "../app/CanvasViewport";
 import { EventEditor } from "../editors/EventEditor";
 import { SpanEditor } from "../editors/SpanEditor";
+import { TornNote } from "../notes/TornNote";
+import { clampNoteY, linkedTimedEventId } from "../domain/noteWrite";
 import "./day.css";
 
 const FIRST_HOUR = 6;
@@ -52,6 +54,17 @@ function eventStyle(event: DayEvent) {
   return { top: `${top}px`, height: `${height}px` };
 }
 
+function eventTop(event: DayEvent): number {
+  const start = Math.max(FIRST_HOUR * 60, event.startMinute);
+  return 10 + ((start - FIRST_HOUR * 60) / 60) * ROW_HEIGHT;
+}
+
+function eventHeight(event: DayEvent): number {
+  const start = Math.max(FIRST_HOUR * 60, event.startMinute);
+  const end = Math.min(1440, event.endMinute);
+  return Math.max(34, ((end - start) / 60) * ROW_HEIGHT - 3);
+}
+
 function stripDays(dateKey: string): string[] {
   return Array.from({ length: 7 }, (_, index) => adjacentDayKey(dateKey, index - 3)).filter((value): value is string => value !== null);
 }
@@ -85,22 +98,31 @@ function EventDetail({ event, dateKey, onClose, onEdit }: { event: DayEvent; dat
 export function DayPage({ store, dateKey, onBack, onDayChange }: DayPageProps) {
   const month = monthFromDayKey(dateKey)!;
   const parts = parseDayKey(dateKey)!;
-  const { status, dtos, payload: monthPayload, unseenDays, message, retry, mutationMessage } = useCalendarMonth(store, month);
+  const { status, dtos, payload: monthPayload, notesByDay, unseenDays, message, retry, mutationMessage } = useCalendarMonth(store, month);
   const payload = useMemo(() => materializeDay(dtos, dateKey), [dtos, dateKey]);
   const [selectedEvent, setSelectedEvent] = useState<DayEvent | null>(null);
   const [editorEvent, setEditorEvent] = useState<EventDTO | null | undefined>(undefined);
   const [editingSpan, setEditingSpan] = useState<CalendarSpan | null>(null);
   const [fabOpen, setFabOpen] = useState(false);
+  const [activeNoteId, setActiveNoteId] = useState<string | null>(null);
+  const [draggingNoteId, setDraggingNoteId] = useState<string | null>(null);
+  const [activeNoteOffset, setActiveNoteOffset] = useState(0);
+  const timelineRef = useRef<HTMLElement>(null);
+  const noteGesture = useRef<{ id: string; pointerId: number; startY: number; originOffset: number; armed: boolean; timer?: number } | null>(null);
   const today = currentProductDay() === dateKey;
   const unseen = unseenDays.has(dateKey);
   const strip = stripDays(dateKey);
   const visibleTimed = payload.timed.filter((event) => event.endMinute > FIRST_HOUR * 60 && event.startMinute < 1440);
+  const notes = notesByDay.get(parts.day) ?? [];
 
   useEffect(() => {
     setSelectedEvent(null);
     setEditorEvent(undefined);
     setEditingSpan(null);
     setFabOpen(false);
+    setActiveNoteId(null);
+    setDraggingNoteId(null);
+    setActiveNoteOffset(0);
     void store.markSeen(dateKey);
   }, [store, dateKey]);
 
@@ -132,6 +154,79 @@ export function DayPage({ store, dateKey, onBack, onDayChange }: DayPageProps) {
     setSelectedEvent(null);
   }
 
+  function noteBaseY(note: CalendarNote, index: number): number { return note.y ?? 34 + index * 116; }
+
+  function finishActiveNote() {
+    if (!activeNoteId) return;
+    const index = notes.findIndex((note) => note.id === activeNoteId);
+    const note = index >= 0 ? notes[index] : null;
+    if (note) {
+      if (activeNoteOffset !== 0) {
+        const y = clampNoteY(noteBaseY(note, index) + activeNoteOffset, TIMELINE_HEIGHT);
+        const linked = linkedTimedEventId(y + 42, visibleTimed, eventTop, eventHeight);
+        store.placeNote(note.id, y, linked);
+      }
+      void store.commitNote(note.id);
+    }
+    setActiveNoteId(null);
+    setDraggingNoteId(null);
+    setActiveNoteOffset(0);
+  }
+
+  function startBlankNote() {
+    finishActiveNote();
+    const note = store.addBlankNote(dateKey, Math.max(8, (timelineRef.current?.scrollTop ?? 0) + 96));
+    setActiveNoteId(note.id);
+    setActiveNoteOffset(0);
+    setFabOpen(false);
+  }
+
+  function notePointerDown(note: CalendarNote, event: PointerEvent) {
+    if (note.author !== "kitty" || (event.target as Element).closest("textarea,button")) return;
+    const target = event.currentTarget as HTMLElement;
+    const active = activeNoteId === note.id;
+    const gesture: { id: string; pointerId: number; startY: number; originOffset: number; armed: boolean; timer?: number } = { id: note.id, pointerId: event.pointerId, startY: event.clientY, originOffset: activeNoteOffset, armed: active };
+    noteGesture.current = gesture;
+    if (active) {
+      event.preventDefault();
+      target.setPointerCapture(event.pointerId);
+      setDraggingNoteId(note.id);
+    } else {
+      gesture.timer = window.setTimeout(() => {
+        if (noteGesture.current !== gesture) return;
+        finishActiveNote();
+        gesture.armed = true;
+        setActiveNoteId(note.id);
+        setActiveNoteOffset(0);
+        setDraggingNoteId(note.id);
+        target.setPointerCapture(event.pointerId);
+      }, 500);
+    }
+  }
+
+  function notePointerMove(event: PointerEvent) {
+    const gesture = noteGesture.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    const distance = event.clientY - gesture.startY;
+    if (!gesture.armed && Math.abs(distance) > 10) {
+      if (gesture.timer) window.clearTimeout(gesture.timer);
+      noteGesture.current = null;
+      return;
+    }
+    if (gesture.armed) {
+      event.preventDefault();
+      setActiveNoteOffset(gesture.originOffset + distance);
+    }
+  }
+
+  function endNotePointer(event: PointerEvent) {
+    const gesture = noteGesture.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    if (gesture.timer) window.clearTimeout(gesture.timer);
+    noteGesture.current = null;
+    setDraggingNoteId(null);
+  }
+
   return (
     <CanvasViewport fitViewportHeight>
       <main class="calendar-canvas day-canvas" aria-busy={status === "loading"}>
@@ -153,16 +248,21 @@ export function DayPage({ store, dateKey, onBack, onDayChange }: DayPageProps) {
           {payload.allDay.map((event) => <button type="button" class={`all-day-event ${authorClass(event.author)} ${store.isPending(event.id) ? "is-pending" : ""}`} key={event.id} onClick={() => openEvent(event)}><strong>{event.title}</strong><span>{eventTimeLabel(event)} · {AUTHOR_LABEL[event.author]}</span>{event.eventType && SPECIAL_DAY_TYPES.has(event.eventType) && <img src="/assets/stamp-heart-mini.png" alt="" aria-hidden="true" />}</button>)}
         </section>}
 
-        <section class="day-timeline" aria-label="Timeline from 06:00 to 23:00">
-          <div class="timeline-content" style={{ height: `${TIMELINE_HEIGHT}px` }}>
+        <section ref={timelineRef} class={draggingNoteId ? "day-timeline is-note-busy" : "day-timeline"} aria-label="Timeline from 06:00 to 23:00">
+          <div class="timeline-content" style={{ height: `${TIMELINE_HEIGHT}px` }} onPointerDown={(event) => { if (!(event.target as Element).closest(".torn-note")) finishActiveNote(); }}>
             <div class="timeline-grid-paper" aria-hidden="true" />
             {Array.from({ length: LAST_HOUR - FIRST_HOUR + 1 }, (_, index) => FIRST_HOUR + index).map((hour) => <div class="hour-row" style={{ top: `${10 + (hour - FIRST_HOUR) * ROW_HEIGHT}px` }} key={hour}><span>{String(hour).padStart(2, "0")}:00</span><i /></div>)}
             {visibleTimed.map((event) => <button type="button" class={`timed-event ${authorClass(event.author)} ${store.isPending(event.id) ? "is-pending" : ""}`} style={eventStyle(event)} key={`${event.id}-${event.startMinute}`} onClick={() => setSelectedEvent(event)}><strong>{event.title}</strong><span>{eventTimeLabel(event)} · {AUTHOR_LABEL[event.author]}</span></button>)}
-            {status === "ready" && payload.allDay.length === 0 && payload.timed.length === 0 && <div class="day-empty"><span>這一天還空著</span><small>nothing here yet</small></div>}
+            {notes.map((note, index) => {
+              const linkedTitle = note.linkedEventId ? payload.timed.find((event) => event.id === note.linkedEventId)?.title : undefined;
+              return <div class="note-position" style={{ left: `${note.author === "master" ? 58 : 214}px`, top: `${noteBaseY(note, index)}px` }} key={note.id}><TornNote note={note} index={index} linkedTitle={linkedTitle} active={activeNoteId === note.id} dragging={draggingNoteId === note.id} offsetY={activeNoteId === note.id ? activeNoteOffset : 0} onText={(body) => store.setNoteText(note.id, body)} onDelete={() => { setActiveNoteId(null); setActiveNoteOffset(0); void store.deleteNote(note.id); }} onDoubleTap={() => void store.toggleNoteLike(note.id)} onPointerDown={(event) => notePointerDown(note, event)} onPointerMove={notePointerMove} onPointerUp={endNotePointer} onPointerCancel={endNotePointer} /></div>;
+            })}
+            {status === "ready" && payload.allDay.length === 0 && payload.timed.length === 0 && notes.length === 0 && <div class="day-empty"><span>這一天還空著</span><small>nothing here yet</small></div>}
           </div>
         </section>
 
         <div class={fabOpen ? "event-fab is-open" : "event-fab"}>
+          {fabOpen && <button class="event-fab-action note-fab-action" type="button" aria-label="New note" onClick={startBlankNote}><span aria-hidden="true">▧</span></button>}
           {fabOpen && <button class="event-fab-action" type="button" aria-label="New event" onClick={() => { setEditorEvent(null); setFabOpen(false); }}><img src="/assets/ic-event.png" alt="" aria-hidden="true" /></button>}
           <button class="event-fab-main" type="button" aria-label="Add" onClick={() => setFabOpen((open) => !open)}><span aria-hidden="true">+</span></button>
         </div>
