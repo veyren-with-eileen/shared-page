@@ -1,0 +1,51 @@
+.span-editor-backdrop {
+  position: absolute;
+  z-index: 42;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  background: rgb(92 66 73 / 18%);
+}
+
+.span-editor-sheet {
+  width: 100%;
+  min-height: 188px;
+  padding: 10px 24px 14px;
+  border: 1.4px solid var(--paper-border);
+  border-bottom: 0;
+  border-radius: 18px 18px 0 0;
+  background: #fff;
+  box-shadow: 0 -4px 0 rgb(214 160 166 / 16%);
+}
+
+.span-editor-sheet.is-editing { min-height: 246px; }
+.span-heading-row, .span-heading-row > div, .span-range-row { display: flex; align-items: baseline; }
+.span-heading-row { justify-content: space-between; }
+.span-heading-row > div { gap: 8px; }
+.span-heading-row strong { color: var(--ink-title); font: 400 19px var(--font-body); }
+.span-heading-row span { color: var(--ink-sub); font: 14px var(--font-script); }
+
+.span-title-field { display: block; margin-top: 16px; }
+.span-title-field input {
+  width: 100%;
+  padding: 0 0 7px;
+  border: 0;
+  border-bottom: 1.3px solid var(--paper-border);
+  border-radius: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink-note-kitty);
+  font: 21px var(--font-hand-kitty);
+}
+.span-editor-sheet.author-master .span-title-field input { color: var(--ink-note-master); font-family: var(--font-hand-master); }
+.span-editor-sheet.author-system .span-title-field input { color: var(--ink-system); font-family: var(--font-hand-system); }
+.span-title-field input::placeholder { color: var(--ink-dim-day); font-family: var(--font-script); }
+
+.span-range-row { gap: 7px; margin-top: 18px; color: var(--ink-kitty); font: 15px var(--font-body); white-space: nowrap; }
+.span-range-row select { min-width: 44px; padding: 6px 7px; border: 0; border-radius: 999px; appearance: none; background: var(--paper-capsule); color: var(--ink-note-kitty); font: 15px var(--font-body); text-align: center; }
+.span-range-row i { flex: 1; color: var(--ink-sub); font: normal 13px var(--font-body); text-align: right; }
+.span-editor-bottom { margin-top: 16px; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .span-editor-sheet { animation: sheet-in 180ms ease-out; }
+}

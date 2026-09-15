@@ -118,6 +118,9 @@
 .month-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
+  touch-action: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .month-cell {
@@ -187,6 +190,17 @@
 
 .span-band.author-system {
   background: var(--paper-block-auto);
+}
+
+.span-drag-preview {
+  position: absolute;
+  z-index: 3;
+  top: 17px;
+  right: 0;
+  left: 0;
+  height: 33px;
+  background: var(--paper-block-pick);
+  pointer-events: none;
 }
 
 .period-band {

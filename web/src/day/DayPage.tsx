@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
-import { AUTHOR_LABEL, SPECIAL_DAY_TYPES, type Author, type DayEvent, type EventDTO, type EventDraft } from "../domain/calendar";
+import { AUTHOR_LABEL, SPECIAL_DAY_TYPES, type Author, type CalendarSpan, type DayEvent, type EventDTO, type EventDraft } from "../domain/calendar";
 import { materializeDay } from "../domain/calendarDTO";
 import { adjacentDayKey, currentProductDay, monthFromDayKey, monthLabel, parseDayKey, productDateParts, weekdayLabelForDay, weekdayLetterForDay } from "../domain/calendarTime";
 import { useCalendarMonth } from "../state/useCalendarMonth";
 import type { CalendarStore } from "../state/calendarStore";
 import { CanvasViewport } from "../app/CanvasViewport";
 import { EventEditor } from "../editors/EventEditor";
+import { SpanEditor } from "../editors/SpanEditor";
 import "./day.css";
 
 const FIRST_HOUR = 6;
@@ -84,10 +85,11 @@ function EventDetail({ event, dateKey, onClose, onEdit }: { event: DayEvent; dat
 export function DayPage({ store, dateKey, onBack, onDayChange }: DayPageProps) {
   const month = monthFromDayKey(dateKey)!;
   const parts = parseDayKey(dateKey)!;
-  const { status, dtos, unseenDays, message, retry, mutationMessage } = useCalendarMonth(store, month);
+  const { status, dtos, payload: monthPayload, unseenDays, message, retry, mutationMessage } = useCalendarMonth(store, month);
   const payload = useMemo(() => materializeDay(dtos, dateKey), [dtos, dateKey]);
   const [selectedEvent, setSelectedEvent] = useState<DayEvent | null>(null);
   const [editorEvent, setEditorEvent] = useState<EventDTO | null | undefined>(undefined);
+  const [editingSpan, setEditingSpan] = useState<CalendarSpan | null>(null);
   const [fabOpen, setFabOpen] = useState(false);
   const today = currentProductDay() === dateKey;
   const unseen = unseenDays.has(dateKey);
@@ -97,6 +99,7 @@ export function DayPage({ store, dateKey, onBack, onDayChange }: DayPageProps) {
   useEffect(() => {
     setSelectedEvent(null);
     setEditorEvent(undefined);
+    setEditingSpan(null);
     setFabOpen(false);
     void store.markSeen(dateKey);
   }, [store, dateKey]);
@@ -106,6 +109,15 @@ export function DayPage({ store, dateKey, onBack, onDayChange }: DayPageProps) {
     if (!dto || store.isPending(event.id)) return;
     setSelectedEvent(null);
     setEditorEvent(dto);
+  }
+
+  function openEvent(event: DayEvent) {
+    if (event.isSpan) {
+      const span = monthPayload.spans.find((item) => item.id === event.id);
+      if (span) setEditingSpan(span);
+      return;
+    }
+    setSelectedEvent(event);
   }
 
   function saveEditor(draft: EventDraft) {
@@ -138,7 +150,7 @@ export function DayPage({ store, dateKey, onBack, onDayChange }: DayPageProps) {
         {status === "loading" && <p class="day-status">syncing…</p>}
 
         {payload.allDay.length > 0 && <section class="all-day-rows" aria-label="All-day events">
-          {payload.allDay.map((event) => <button type="button" class={`all-day-event ${authorClass(event.author)} ${store.isPending(event.id) ? "is-pending" : ""}`} key={event.id} onClick={() => setSelectedEvent(event)}><strong>{event.title}</strong><span>{eventTimeLabel(event)} · {AUTHOR_LABEL[event.author]}</span>{event.eventType && SPECIAL_DAY_TYPES.has(event.eventType) && <img src="/assets/stamp-heart-mini.png" alt="" aria-hidden="true" />}</button>)}
+          {payload.allDay.map((event) => <button type="button" class={`all-day-event ${authorClass(event.author)} ${store.isPending(event.id) ? "is-pending" : ""}`} key={event.id} onClick={() => openEvent(event)}><strong>{event.title}</strong><span>{eventTimeLabel(event)} · {AUTHOR_LABEL[event.author]}</span>{event.eventType && SPECIAL_DAY_TYPES.has(event.eventType) && <img src="/assets/stamp-heart-mini.png" alt="" aria-hidden="true" />}</button>)}
         </section>}
 
         <section class="day-timeline" aria-label="Timeline from 06:00 to 23:00">
@@ -158,6 +170,17 @@ export function DayPage({ store, dateKey, onBack, onDayChange }: DayPageProps) {
         {mutationMessage && <button class="mutation-toast" type="button" onClick={() => store.clearMutationMessage()}>{mutationMessage}</button>}
         {selectedEvent && <EventDetail event={selectedEvent} dateKey={dateKey} onClose={() => setSelectedEvent(null)} onEdit={() => beginEdit(selectedEvent)} />}
         {editorEvent !== undefined && <EventEditor dateKey={dateKey} editing={editorEvent} onClose={() => setEditorEvent(undefined)} onSave={saveEditor} onDelete={editorEvent ? deleteEditor : undefined} />}
+        {editingSpan && <SpanEditor
+          month={month}
+          start={editingSpan.startDay}
+          end={editingSpan.endDay}
+          editing={editingSpan}
+          deleteTitle="remove this day"
+          deleteConfirm="confirm"
+          onClose={() => setEditingSpan(null)}
+          onSave={(draft) => { void store.updateSpan(editingSpan, draft); setEditingSpan(null); }}
+          onDelete={() => { void store.removeSpanDay(editingSpan, month, parts.day); setEditingSpan(null); }}
+        />}
       </main>
     </CanvasViewport>
   );

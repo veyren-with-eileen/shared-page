@@ -7,6 +7,7 @@ import {
   type DayRange,
   type MonthPayload
 } from "../domain/calendar";
+import { useRef, useState } from "preact/hooks";
 import {
   WEEKDAY_HEADERS,
   dayKey,
@@ -20,6 +21,16 @@ import {
 import { useCalendarMonth } from "../state/useCalendarMonth";
 import type { CalendarStore } from "../state/calendarStore";
 import { CanvasViewport } from "../app/CanvasViewport";
+import { SpanEditor } from "../editors/SpanEditor";
+import {
+  armSpanGesture,
+  beginSpanGesture,
+  endSpanGesture,
+  hitSpanBand,
+  moveSpanGesture,
+  type SpanGestureEffect,
+  type SpanGestureState
+} from "./spanGesture";
 import "./month.css";
 
 interface MonthPageProps {
@@ -47,6 +58,77 @@ export function MonthPage({ store, month, onMonthChange, onDayOpen }: MonthPageP
   const { status, payload, unseenDays, message, retry, mutationMessage } = useCalendarMonth(store, month);
   const today = todayInMonth(month);
   const days = monthGrid(month);
+  const gridRef = useRef<HTMLDivElement>(null);
+  const gestureRef = useRef<SpanGestureState | null>(null);
+  const armTimerRef = useRef<number | null>(null);
+  const [preview, setPreview] = useState<{ start: number; end: number } | null>(null);
+  const [spanSheet, setSpanSheet] = useState<{ start: number; end: number; editing?: CalendarSpan } | null>(null);
+
+  function pointDay(clientX: number, clientY: number) {
+    const grid = gridRef.current;
+    if (!grid) return null;
+    const rect = grid.getBoundingClientRect();
+    const col = Math.floor(((clientX - rect.left) / rect.width) * 7);
+    const rows = weekRows(month);
+    const row = Math.floor(((clientY - rect.top) / rect.height) * rows);
+    if (col < 0 || col > 6 || row < 0 || row >= rows) return null;
+    const cell = days[row * 7 + col];
+    if (!cell) return null;
+    return { cell, day: cell.inMonth ? cell.day : null, inCellY: (clientY - rect.top) - row * (rect.height / rows) };
+  }
+
+  function runGestureEffect(effect: SpanGestureEffect | null) {
+    if (!effect) return;
+    if (effect.type === "open-day") onDayOpen(effect.dayKey);
+    if (effect.type === "new-span") setSpanSheet({ start: effect.startDay, end: effect.endDay });
+    if (effect.type === "edit-span") {
+      const editing = payload.spans.find((span) => span.id === effect.id);
+      if (editing) setSpanSheet({ start: editing.startDay, end: editing.endDay, editing });
+    }
+  }
+
+  function clearGesture() {
+    if (armTimerRef.current !== null) window.clearTimeout(armTimerRef.current);
+    armTimerRef.current = null;
+    gestureRef.current = null;
+    setPreview(null);
+  }
+
+  function pointerDown(event: PointerEvent) {
+    if (event.button !== 0 || gestureRef.current) return;
+    const hit = pointDay(event.clientX, event.clientY);
+    if (!hit) return;
+    event.preventDefault();
+    gridRef.current?.setPointerCapture(event.pointerId);
+    const bandId = hit.day === null ? null : hitSpanBand(payload.spans, hit.day, hit.inCellY);
+    gestureRef.current = beginSpanGesture(event.pointerId, { x: event.clientX, y: event.clientY }, hit.cell.key, hit.day, bandId);
+    if (hit.day !== null) {
+      armTimerRef.current = window.setTimeout(() => {
+        const current = gestureRef.current;
+        if (!current) return;
+        const armed = armSpanGesture(current);
+        gestureRef.current = armed.state;
+        if (armed.state.pickFrom !== null) setPreview({ start: armed.state.pickFrom, end: armed.state.pickTo ?? armed.state.pickFrom });
+        runGestureEffect(armed.effect);
+      }, 300);
+    }
+  }
+
+  function pointerMove(event: PointerEvent) {
+    const current = gestureRef.current;
+    if (!current || current.pointerId !== event.pointerId) return;
+    const hit = pointDay(event.clientX, event.clientY);
+    const moved = moveSpanGesture(current, { x: event.clientX, y: event.clientY }, hit?.day ?? null);
+    gestureRef.current = moved;
+    if (moved.pickFrom !== null && moved.pickTo !== null) setPreview({ start: Math.min(moved.pickFrom, moved.pickTo), end: Math.max(moved.pickFrom, moved.pickTo) });
+  }
+
+  function pointerUp(event: PointerEvent) {
+    const current = gestureRef.current;
+    if (!current || current.pointerId !== event.pointerId) return;
+    runGestureEffect(endSpanGesture(current, { x: event.clientX, y: event.clientY }));
+    clearGesture();
+  }
 
   return (
     <CanvasViewport>
@@ -86,7 +168,13 @@ export function MonthPage({ store, month, onMonthChange, onDayOpen }: MonthPageP
 
           <div
             class="month-grid"
+            ref={gridRef}
             style={{ gridTemplateRows: `repeat(${weekRows(month)}, var(--month-cell-height))` }}
+            onPointerDown={pointerDown}
+            onPointerMove={pointerMove}
+            onPointerUp={pointerUp}
+            onPointerCancel={clearGesture}
+            onContextMenu={(event) => event.preventDefault()}
           >
             {days.map((cell) => {
               const events = cell.inMonth ? payload.events.get(cell.day) ?? [] : [];
@@ -97,6 +185,7 @@ export function MonthPage({ store, month, onMonthChange, onDayOpen }: MonthPageP
                 event.eventType ? SPECIAL_DAY_TYPES.has(event.eventType) : false
               );
               const unseen = cell.inMonth && unseenDays.has(dayKey(month, cell.day));
+              const isPreview = cell.inMonth && preview && cell.day >= preview.start && cell.day <= preview.end;
 
               return (
                 <div
@@ -105,6 +194,8 @@ export function MonthPage({ store, month, onMonthChange, onDayOpen }: MonthPageP
                 >
                   <span class="grid-paper" aria-hidden="true" />
                   {!cell.inMonth && <span class="dim-hatch" aria-hidden="true" />}
+
+                  {isPreview && <span class="span-drag-preview" aria-hidden="true" />}
 
                   {spans.map((span, lane) => (
                     <span
@@ -156,7 +247,7 @@ export function MonthPage({ store, month, onMonthChange, onDayOpen }: MonthPageP
                     class="month-cell-hit-target"
                     type="button"
                     aria-label={`Open ${cell.key}`}
-                    onClick={() => onDayOpen(cell.key)}
+                    onClick={(event) => { if (event.detail === 0) onDayOpen(cell.key); }}
                   />
                 </div>
               );
@@ -182,6 +273,19 @@ export function MonthPage({ store, month, onMonthChange, onDayOpen }: MonthPageP
             {mutationMessage}
           </button>
         )}
+        {spanSheet && <SpanEditor
+          month={month}
+          start={spanSheet.start}
+          end={spanSheet.end}
+          editing={spanSheet.editing}
+          onClose={() => setSpanSheet(null)}
+          onSave={(draft) => {
+            if (spanSheet.editing) void store.updateSpan(spanSheet.editing, draft);
+            else void store.createSpan(draft);
+            setSpanSheet(null);
+          }}
+          onDelete={spanSheet.editing ? () => { void store.deleteSpan(spanSheet.editing!); setSpanSheet(null); } : undefined}
+        />}
       </main>
     </CanvasViewport>
   );
