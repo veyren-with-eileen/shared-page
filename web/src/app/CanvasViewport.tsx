@@ -7,6 +7,7 @@ interface CanvasViewportProps {
   children: ComponentChildren;
   height?: number;
   fitViewportHeight?: boolean;
+  fitWholeViewport?: boolean;
 }
 
 export interface CanvasViewportMetrics {
@@ -14,16 +15,32 @@ export interface CanvasViewportMetrics {
   canvasHeight: number;
 }
 
-export function canvasViewportMetrics(viewportWidth: number, viewportHeight: number, height = 874, fitViewportHeight = false): CanvasViewportMetrics {
-  const scale = Math.min(1, viewportWidth / CANVAS_WIDTH);
+export function canvasViewportMetrics(
+  viewportWidth: number,
+  viewportHeight: number,
+  height = 874,
+  fitViewportHeight = false,
+  fitWholeViewport = false
+): CanvasViewportMetrics {
+  const scale = Math.min(
+    1,
+    viewportWidth / CANVAS_WIDTH,
+    fitWholeViewport ? viewportHeight / height : 1
+  );
   return {
     scale,
     canvasHeight: fitViewportHeight ? Math.min(height, viewportHeight / scale) : height
   };
 }
 
-export function CanvasViewport({ children, height = 874, fitViewportHeight = false }: CanvasViewportProps) {
-  const measure = () => canvasViewportMetrics(window.innerWidth, window.visualViewport?.height ?? window.innerHeight, height, fitViewportHeight);
+export function CanvasViewport({ children, height = 874, fitViewportHeight = false, fitWholeViewport = false }: CanvasViewportProps) {
+  const measure = () => canvasViewportMetrics(
+    window.innerWidth,
+    fitWholeViewport ? window.innerHeight : window.visualViewport?.height ?? window.innerHeight,
+    height,
+    fitViewportHeight,
+    fitWholeViewport
+  );
   const [metrics, setMetrics] = useState(measure);
 
   useEffect(() => {
@@ -34,7 +51,7 @@ export function CanvasViewport({ children, height = 874, fitViewportHeight = fal
       window.removeEventListener("resize", updateMetrics);
       window.visualViewport?.removeEventListener("resize", updateMetrics);
     };
-  }, [height, fitViewportHeight]);
+  }, [height, fitViewportHeight, fitWholeViewport]);
 
   return (
     <div

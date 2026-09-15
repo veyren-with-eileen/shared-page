@@ -131,7 +131,7 @@ export function MonthPage({ store, month, onMonthChange, onDayOpen }: MonthPageP
   }
 
   return (
-    <CanvasViewport>
+    <CanvasViewport fitWholeViewport>
       <main class="calendar-canvas" aria-busy={status === "loading"}>
         <header class="month-header">
           <div>

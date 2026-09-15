@@ -19,4 +19,12 @@ describe("canvas viewport metrics", () => {
     expect(metrics.canvasHeight).toBe(874);
     expect(metrics.canvasHeight * metrics.scale).toBeGreaterThan(667);
   });
+
+  it("fits the complete Month canvas to a short phone without changing canonical geometry", () => {
+    const metrics = canvasViewportMetrics(375, 667, 874, false, true);
+
+    expect(metrics.scale).toBeCloseTo(667 / 874);
+    expect(metrics.canvasHeight).toBe(874);
+    expect(metrics.canvasHeight * metrics.scale).toBeCloseTo(667);
+  });
 });
