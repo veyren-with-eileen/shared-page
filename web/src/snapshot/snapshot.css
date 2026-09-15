@@ -81,7 +81,14 @@
 .snapshot-timed-event.author-master { border-left-color: var(--ink-master); background: var(--paper-event-master); }
 .snapshot-timed-event.author-system { border-left-color: var(--ink-system); background: var(--paper-event-auto); }
 .snapshot-note-position { position: absolute; z-index: 7; width: 174px; height: 0; }
-.snapshot-note-position .torn-note { pointer-events: none; }
+.snapshot-note-position .torn-note {
+  /* html-to-image can omit the live note's negative-z-index ::before layer.
+     Paint the same paper asset on the static surface itself so the PNG keeps
+     the torn sheet while the interactive Day View remains unchanged. */
+  background: url("/assets/grid-scrap-strip.png") center / 100% 100% no-repeat;
+  pointer-events: none;
+}
+.snapshot-note-position .torn-note::before { content: none; }
 .snapshot-placed-layer { position: absolute; z-index: 8; inset: 0; width: 402px; height: 1042px; }
 .snapshot-placed-position { position: absolute; display: block; width: 0; height: 0; }
 .snapshot-placed-item { position: absolute; display: block; transform-origin: center; filter: drop-shadow(1.5px 2px 2.5px rgb(150 120 125 / 30%)); }
