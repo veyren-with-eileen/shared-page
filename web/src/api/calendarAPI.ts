@@ -1,6 +1,6 @@
 import type { ConnectionConfig } from "../config/connection";
-import type { CalendarMonth, EventDTO } from "../domain/calendar";
-import { parseEventList } from "../domain/calendarDTO";
+import type { CalendarMonth, EventDTO, EventWritePayload } from "../domain/calendar";
+import { parseEventDTO, parseEventList } from "../domain/calendarDTO";
 import { apiMonthRange } from "../domain/calendarTime";
 
 export class CalendarApiError extends Error {
@@ -24,20 +24,24 @@ async function requestJson(
   config: ConnectionConfig,
   path: string,
   query: URLSearchParams | undefined,
-  signal: AbortSignal
+  signal: AbortSignal | undefined,
+  method = "GET",
+  body?: EventWritePayload | { date: string }
 ): Promise<unknown> {
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), 12_000);
+  const timeout = globalThis.setTimeout(() => controller.abort(), 12_000);
   const abort = () => controller.abort();
-  signal.addEventListener("abort", abort, { once: true });
+  signal?.addEventListener("abort", abort, { once: true });
 
   try {
     const response = await fetch(apiUrl(config.apiBaseUrl, path, query), {
-      method: "GET",
+      method,
       headers: {
         Accept: "application/json",
+        ...(body ? { "Content-Type": "application/json" } : {}),
         "X-Calendar-Token": config.token
       },
+      body: body ? JSON.stringify(body) : undefined,
       cache: "no-store",
       credentials: "omit",
       signal: controller.signal
@@ -65,12 +69,21 @@ async function requestJson(
     throw new CalendarApiError(detail || `Calendar server returned ${response.status}.`, "server", response.status);
   } catch (error) {
     if (error instanceof CalendarApiError) throw error;
-    if (signal.aborted) throw error;
+    if (signal?.aborted) throw error;
     throw new CalendarApiError("Could not reach the calendar backend.", "offline");
   } finally {
-    window.clearTimeout(timeout);
-    signal.removeEventListener("abort", abort);
+    globalThis.clearTimeout(timeout);
+    signal?.removeEventListener("abort", abort);
   }
+}
+
+export interface CalendarGateway {
+  listMonth(month: CalendarMonth, signal: AbortSignal): Promise<EventDTO[]>;
+  listUnseen(signal: AbortSignal): Promise<Set<string>>;
+  createEvent(payload: EventWritePayload): Promise<EventDTO>;
+  updateEvent(id: string, payload: EventWritePayload): Promise<EventDTO>;
+  deleteEvent(id: string): Promise<EventDTO>;
+  markSeen(day: string): Promise<void>;
 }
 
 export async function listCalendarMonth(
@@ -94,4 +107,41 @@ export async function listUnseenDays(
   return new Set(
     (response as { days: unknown[] }).days.filter((day): day is string => typeof day === "string")
   );
+}
+
+export async function createCalendarEvent(
+  config: ConnectionConfig,
+  payload: EventWritePayload
+): Promise<EventDTO> {
+  return parseEventDTO(await requestJson(config, "events", undefined, undefined, "POST", payload));
+}
+
+export async function updateCalendarEvent(
+  config: ConnectionConfig,
+  id: string,
+  payload: EventWritePayload
+): Promise<EventDTO> {
+  return parseEventDTO(await requestJson(config, `events/${encodeURIComponent(id)}`, undefined, undefined, "PATCH", payload));
+}
+
+export async function deleteCalendarEvent(
+  config: ConnectionConfig,
+  id: string
+): Promise<EventDTO> {
+  return parseEventDTO(await requestJson(config, `events/${encodeURIComponent(id)}`, undefined, undefined, "DELETE"));
+}
+
+export async function markCalendarDaySeen(config: ConnectionConfig, day: string): Promise<void> {
+  await requestJson(config, "unseen/seen", undefined, undefined, "POST", { date: day });
+}
+
+export function createCalendarGateway(config: ConnectionConfig): CalendarGateway {
+  return {
+    listMonth: (month, signal) => listCalendarMonth(config, month, signal),
+    listUnseen: (signal) => listUnseenDays(config, signal),
+    createEvent: (payload) => createCalendarEvent(config, payload),
+    updateEvent: (id, payload) => updateCalendarEvent(config, id, payload),
+    deleteEvent: (id) => deleteCalendarEvent(config, id),
+    markSeen: (day) => markCalendarDaySeen(config, day)
+  };
 }

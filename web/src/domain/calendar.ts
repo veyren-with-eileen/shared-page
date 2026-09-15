@@ -40,6 +40,21 @@ export interface EventDTO {
   deletedAt: string | null;
 }
 
+export interface EventWritePayload {
+  title: string;
+  starts_at: string;
+  ends_at: string;
+  precision: "hour" | "day";
+}
+
+export interface EventDraft {
+  title: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  allDay: boolean;
+}
+
 export interface CalendarEvent {
   id: string;
   author: Author;
