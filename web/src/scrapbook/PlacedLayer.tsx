@@ -42,13 +42,13 @@ interface TransformState {
   rotation: number;
 }
 
-function itemSource(item: PlacedItem, sticker: StickerLibraryItem | undefined, store: ScrapbookStore): string | null {
+export function placedItemSource(item: PlacedItem, sticker: StickerLibraryItem | undefined, store: ScrapbookStore): string | null {
   if (item.kind === "photo") return item.photoKey ? store.photoUrl(item.photoKey) : null;
   if (item.kind === "sticker" && sticker) return store.stickerUrl(sticker);
   return null;
 }
 
-function PlacedArt({ item, source }: { item: PlacedItem; source: string | null }) {
+export function PlacedArt({ item, source }: { item: PlacedItem; source: string | null }) {
   if (item.kind === "emoji") return <span class="placed-emoji">{item.emoji}</span>;
   if (item.kind === "photo") return (
     <span class="placed-photo">
@@ -73,7 +73,7 @@ function PlacedItemView({ item, sticker, store, timeline, selected, editable, on
   onBusyChange(busy: boolean): void;
 }) {
   const size = itemBaseSize(item, sticker);
-  const source = itemSource(item, sticker, store);
+  const source = placedItemSource(item, sticker, store);
   const [livePoint, setLivePoint] = useState<Point | null>(null);
   const [liveTransform, setLiveTransform] = useState<{ scale: number; rotation: number } | null>(null);
   const [lifted, setLifted] = useState(false);
@@ -267,7 +267,7 @@ export function PlacedThumbs({ store, items }: { store: ScrapbookStore; items: P
   return <span class="placed-thumbs" aria-hidden="true">
     {recentPlacedItems(items).map((item, index) => {
       const sticker = item.stickerId ? store.sticker(item.stickerId) : undefined;
-      const source = itemSource(item, sticker, store);
+      const source = placedItemSource(item, sticker, store);
       return <span class={`placed-thumb kind-${item.kind}`} style={{ "--thumb-index": index }} key={item.id}>
         {item.kind === "emoji" ? item.emoji : source && <img src={source} alt="" />}
       </span>;

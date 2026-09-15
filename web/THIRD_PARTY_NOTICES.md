@@ -8,3 +8,5 @@ The Web client redistributes the same open-source fonts bundled by the iOS refer
 - Space Mono Regular and Bold — SIL Open Font License 1.1
 
 The complete license texts are available in `public/licenses/`.
+
+The Web client also depends on `html-to-image` (MIT) for the narrowly scoped conversion of the dedicated static page DOM to PNG. Its package license is distributed with the installed npm dependency.

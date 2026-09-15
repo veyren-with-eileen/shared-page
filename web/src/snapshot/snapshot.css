@@ -1,0 +1,90 @@
+.snapshot-render-host {
+  position: fixed;
+  z-index: -10000;
+  top: 0;
+  left: -10000px;
+  width: 402px;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.day-page-snapshot {
+  box-sizing: border-box;
+  padding-bottom: 8px;
+  overflow: hidden;
+  background: #fff;
+  color: var(--ink-title);
+}
+
+.snapshot-title-row {
+  margin: 6px 16px 0;
+  padding-top: 9px;
+  border-top: 1.3px solid var(--paper-border);
+}
+
+.snapshot-title-row > div { display: flex; align-items: baseline; gap: 8px; }
+.snapshot-title-row h1 { margin: 0; color: var(--ink-title); font: 400 20px/24px var(--font-body); }
+.snapshot-title-row p { margin: 0; color: var(--ink-sub-light); font: 13px/18px var(--font-script); }
+
+.snapshot-all-day-rows { display: grid; gap: 5px; padding: 4px 16px 0; }
+.snapshot-all-day-event {
+  position: relative;
+  display: grid;
+  min-height: 40px;
+  justify-items: start;
+  box-sizing: border-box;
+  padding: 5px 9px 6px;
+  overflow: hidden;
+  border-left: 2px solid var(--ink-kitty);
+  background: var(--paper-event-kitty);
+}
+.snapshot-all-day-event.author-master { border-left-color: var(--ink-master); background: var(--paper-event-master); }
+.snapshot-all-day-event.author-system { border-left-color: var(--ink-system); background: var(--paper-event-auto); }
+.snapshot-all-day-event strong,
+.snapshot-timed-event strong { overflow: hidden; width: 100%; font: 400 16px/20px var(--font-hand-kitty); text-overflow: ellipsis; white-space: nowrap; }
+.snapshot-timed-event strong { font-size: 17px; }
+.snapshot-all-day-event span,
+.snapshot-timed-event span { color: var(--ink-kitty); font: 7px/10px var(--font-mono); letter-spacing: .4px; text-transform: uppercase; }
+.snapshot-all-day-event.author-master span,
+.snapshot-timed-event.author-master span { color: var(--ink-master); }
+.snapshot-all-day-event.author-system span,
+.snapshot-timed-event.author-system span { color: var(--ink-system); }
+.snapshot-all-day-event > img { position: absolute; top: -8px; right: 6px; width: 48px; height: 48px; object-fit: contain; opacity: .8; transform: rotate(-16deg); }
+
+.snapshot-timeline-window { width: 402px; margin-top: 2px; overflow: hidden; }
+.snapshot-timeline-content { position: relative; width: 402px; }
+.snapshot-grid-paper {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, transparent 12px, var(--paper-texture) 12px, var(--paper-texture) 13px, transparent 13px),
+    linear-gradient(to bottom, transparent 12px, var(--paper-texture) 12px, var(--paper-texture) 13px, transparent 13px);
+  background-size: 13px 13px;
+}
+.snapshot-hour-row { position: absolute; right: 0; left: 0; height: 1px; }
+.snapshot-hour-row span { position: absolute; top: -6px; left: 11px; padding: 1px 3px; background: rgb(255 255 255 / 90%); color: var(--ink-hour-label); font: 8px/10px var(--font-mono); }
+.snapshot-hour-row i { position: absolute; right: 12px; left: 52px; height: 1px; background: var(--paper-grid-line); }
+.snapshot-timed-event {
+  position: absolute;
+  left: 56px;
+  display: flex;
+  width: 330px;
+  box-sizing: border-box;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 5px 9px 6px;
+  overflow: hidden;
+  border-left: 2.5px solid var(--ink-kitty);
+  background: var(--paper-event-kitty);
+}
+.snapshot-timed-event.author-master { border-left-color: var(--ink-master); background: var(--paper-event-master); }
+.snapshot-timed-event.author-system { border-left-color: var(--ink-system); background: var(--paper-event-auto); }
+.snapshot-note-position { position: absolute; z-index: 7; width: 174px; height: 0; }
+.snapshot-note-position .torn-note { pointer-events: none; }
+.snapshot-placed-layer { position: absolute; z-index: 8; inset: 0; width: 402px; height: 1042px; }
+.snapshot-placed-position { position: absolute; display: block; width: 0; height: 0; }
+.snapshot-placed-item { position: absolute; display: block; transform-origin: center; filter: drop-shadow(1.5px 2px 2.5px rgb(150 120 125 / 30%)); }
+.snapshot-empty { position: absolute; top: 110px; left: 0; display: grid; width: 402px; color: rgb(134 100 106 / 42%); text-align: center; }
+.snapshot-empty span { font: 17px var(--font-body); }
+.snapshot-empty small { font: 13px var(--font-script); }
