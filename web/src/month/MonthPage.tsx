@@ -22,6 +22,9 @@ import { useCalendarMonth } from "../state/useCalendarMonth";
 import type { CalendarStore } from "../state/calendarStore";
 import { CanvasViewport } from "../app/CanvasViewport";
 import { SpanEditor } from "../editors/SpanEditor";
+import type { ScrapbookStore } from "../state/scrapbookStore";
+import { useScrapbook } from "../state/useScrapbook";
+import { PlacedThumbs } from "../scrapbook/PlacedLayer";
 import {
   armSpanGesture,
   beginSpanGesture,
@@ -35,6 +38,7 @@ import "./month.css";
 
 interface MonthPageProps {
   store: CalendarStore;
+  scrapbook: ScrapbookStore;
   month: CalendarMonth;
   onMonthChange(month: CalendarMonth): void;
   onDayOpen(dayKey: string): void;
@@ -54,8 +58,9 @@ function periodForDay(payload: MonthPayload, day: number): DayRange | undefined 
   return payload.periods.find((period) => day >= period.start && day <= period.end);
 }
 
-export function MonthPage({ store, month, onMonthChange, onDayOpen }: MonthPageProps) {
+export function MonthPage({ store, scrapbook, month, onMonthChange, onDayOpen }: MonthPageProps) {
   const { status, payload, unseenDays, message, retry, mutationMessage } = useCalendarMonth(store, month);
+  const scrapbookSnapshot = useScrapbook(scrapbook);
   const today = todayInMonth(month);
   const days = monthGrid(month);
   const gridRef = useRef<HTMLDivElement>(null);
@@ -240,6 +245,10 @@ export function MonthPage({ store, month, onMonthChange, onDayOpen }: MonthPageP
                         ))}
                   </span>
 
+                  {cell.inMonth && (scrapbookSnapshot.byDay.get(cell.key)?.length ?? 0) > 0 && (
+                    <PlacedThumbs store={scrapbook} items={scrapbookSnapshot.byDay.get(cell.key)!} />
+                  )}
+
                   {unseen && (
                     <img class="new-badge" src="/assets/red-exclaim-double.png" alt="NEW" />
                   )}
@@ -271,6 +280,11 @@ export function MonthPage({ store, month, onMonthChange, onDayOpen }: MonthPageP
         {mutationMessage && (
           <button class="mutation-toast" type="button" onClick={() => store.clearMutationMessage()}>
             {mutationMessage}
+          </button>
+        )}
+        {scrapbookSnapshot.message && (
+          <button class="scrapbook-toast" type="button" onClick={() => scrapbook.clearMessage()}>
+            {scrapbookSnapshot.message}
           </button>
         )}
         {spanSheet && <SpanEditor

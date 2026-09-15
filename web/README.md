@@ -1,6 +1,6 @@
-# shared-page Web — Checkpoint 3A
+# shared-page Web — Checkpoint 5
 
-Faithful PWA port for the existing shared-page calendar. Standard single-day events are writable; spans and the remaining layers stay read-only.
+Faithful PWA port for the existing shared-page calendar, including calendar writes, torn notes, and the client-local scrapbook layer.
 
 This directory is independent from `server/` and `ios/`. It contains no OpenAI API client and no MCP client. The PWA reads the existing REST API; official ChatGPT continues to use the existing MCP entry point.
 
@@ -43,13 +43,14 @@ For production, serve the PWA and proxy `/api/v1/calendar/*` to the existing bac
 - Browser Back and Forward restore Month and Day URL state.
 - Opening a Day route marks that date seen through the existing idempotent receipt endpoint.
 
-## Checkpoint 3A event writes
+## Calendar and scrapbook writes
 
-- The Day View FAB exposes only the available event action.
+- The Day View FAB exposes event, note, sticker/emoji, and photo actions.
 - Standard single-day events support create, edit, date/time moves, all-day conversion, and two-step delete confirmation.
 - Writes are optimistic and never persisted in browser storage. Failure restores the last canonical event and shows an in-page error.
 - Per-event writes are serialized; stale GETs and older mutation responses cannot overwrite newer intent.
-- Multi-day all-day spans and cross-day timed events remain read-only for the Checkpoint 3B boundary.
+- Multi-day spans preserve the iOS create, range edit, whole-delete, remove-day, and split semantics.
+- Notes use the existing REST model; scrapbook placements are deliberately separate and persist only in IndexedDB.
 
 ## Commands
 
@@ -64,11 +65,17 @@ In production preview, verify that `/manifest.webmanifest` loads and that DevToo
 
 PWA installation requires a secure context. `localhost` is treated as trustworthy by supported browsers, but a phone opening a development machine's plain `http://192.168.x.x:5173` address is not. This checkpoint does not add hosting or TLS solely for an install test.
 
+## Scrapbook storage and Web parity
+
+- Scrapbook placements, imported stickers, emoji, and photos are stored only in this browser origin's IndexedDB. They do not sync to iOS, another browser, REST, or MCP in Phase 1.
+- Automatic foreground cutout is not available in the Phase 1 PWA port. Transparent PNG/WebP imports keep transparency and receive a light white outline; opaque JPG/PNG files remain rectangular.
+- Imported photos are orientation-normalized, bounded to a 1600px long side, and stored as compressed JPEG instead of retaining the original camera file.
+
 ## Checkpoint boundary
 
-Implemented: PWA shell, iOS theme tokens, calendar DTO/materialization, REST loading, unseen visuals and mark-seen, Month View, URL-addressable Day View, 06:00–23:00 timeline, all-day/span rows, read-only event details, and standard single-day event CRUD.
+Implemented: PWA shell, iOS theme tokens, calendar DTO/materialization, REST loading, unseen visuals and mark-seen, Month and Day Views, event/span CRUD, torn notes, and the IndexedDB scrapbook layer.
 
-Not included: SpanEditor mutations, comments or notes, scrapbook decorations, snapshots/pageSync, Web Push, widgets, or any server/MCP change.
+Not included: snapshots/pageSync, scrapbook cross-device sync, automatic subject cutout, Web Push, widgets, or any server/MCP change.
 
 ## License and required notice
 

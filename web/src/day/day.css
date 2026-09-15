@@ -475,7 +475,8 @@
   gap: 10px;
 }
 
-.event-fab button {
+.event-fab > button,
+.event-fab-row > .event-fab-action {
   display: grid;
   width: 50px;
   height: 50px;
@@ -488,6 +489,14 @@
   cursor: pointer;
 }
 
+.event-fab-row {
+  position: relative;
+  display: grid;
+  width: 50px;
+  height: 50px;
+  place-items: center;
+}
+
 .event-fab-main span {
   font-family: system-ui, sans-serif;
   font-size: 30px;
@@ -498,10 +507,11 @@
 
 .event-fab.is-open .event-fab-main span { transform: rotate(135deg); }
 .event-fab-action img { width: 21px; height: 21px; object-fit: contain; filter: brightness(0) invert(1); }
-.note-fab-action span { color: #fff; font: 24px/1 var(--font-body); transform: rotate(-4deg); }
+.fab-progress { color: white; font: 18px/1 var(--font-mono); }
 
 @media (prefers-reduced-motion: no-preference) {
-  .event-fab-action { animation: fab-in 220ms cubic-bezier(.2, .9, .3, 1.25); }
+  .event-fab > .event-fab-action,
+  .event-fab-row > .event-fab-action { animation: fab-in 220ms cubic-bezier(.2, .9, .3, 1.25); }
   @keyframes fab-in { from { transform: translateY(60px) scale(.3); opacity: 0; } }
 }
 

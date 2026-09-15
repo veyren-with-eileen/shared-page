@@ -10,6 +10,8 @@ import { monthKey } from "../domain/calendarTime";
 import { DayPage } from "../day/DayPage";
 import { MonthPage } from "../month/MonthPage";
 import { CalendarStore } from "../state/calendarStore";
+import { IndexedDbScrapbookRepository } from "../persistence/scrapbookRepository";
+import { ScrapbookStore } from "../state/scrapbookStore";
 import { ConnectionSetup } from "./ConnectionSetup";
 import {
   dayRouteUrl,
@@ -37,8 +39,16 @@ export function App() {
     () => new CalendarStore(createCalendarGateway(connection)),
     [connection.apiBaseUrl, connection.token]
   );
+  const scrapbook = useMemo(
+    () => new ScrapbookStore(new IndexedDbScrapbookRepository()),
+    []
+  );
 
   useEffect(() => () => calendar.dispose(), [calendar]);
+  useEffect(() => {
+    void scrapbook.hydrate();
+    return () => scrapbook.dispose();
+  }, [scrapbook]);
 
   useEffect(() => {
     const state = currentNavigationState();
@@ -108,6 +118,7 @@ export function App() {
       {route.kind === "month" ? (
         <MonthPage
           store={calendar}
+          scrapbook={scrapbook}
           month={route.month}
           onMonthChange={(month) =>
             pushRoute({ kind: "month", month }, monthRouteUrl(month))
@@ -117,6 +128,7 @@ export function App() {
       ) : (
         <DayPage
           store={calendar}
+          scrapbook={scrapbook}
           dateKey={route.dayKey}
           onBack={backToMonth}
           onDayChange={changeDay}
