@@ -16,12 +16,7 @@
   position: absolute;
   z-index: -1;
   inset: 0;
-  background:
-    linear-gradient(var(--paper-texture) 1px, transparent 1px),
-    linear-gradient(90deg, var(--paper-texture) 1px, transparent 1px),
-    #fff;
-  background-size: 13px 13px;
-  clip-path: polygon(0 0, 100% 0, 100% 92%, 96% 96%, 91% 92%, 85% 98%, 78% 93%, 71% 99%, 64% 93%, 57% 98%, 49% 93%, 42% 99%, 35% 93%, 28% 98%, 21% 92%, 14% 98%, 7% 93%, 0 97%);
+  background: url("/assets/grid-scrap-strip.png") center / 100% 100% no-repeat;
   content: "";
 }
 .torn-note.is-lifted { z-index: 20; filter: drop-shadow(3px 7px 8px rgb(150 120 125 / 42%)); scale: 1.05; touch-action: none; }
@@ -34,7 +29,7 @@
 .torn-note textarea { height: 46px; padding: 0; resize: none; overflow: hidden; user-select: text; }
 .torn-note em { display: block; overflow: hidden; margin-top: 1px; color: var(--ink-kitty); font: normal 6.5px var(--font-mono); letter-spacing: .3px; text-overflow: ellipsis; white-space: nowrap; }
 .torn-note.author-master em { color: var(--ink-master); }
-.note-tape { position: absolute; top: -10px; left: 61px; width: 52px; height: 25px; background: repeating-linear-gradient(90deg, rgb(244 203 211 / 80%) 0 7px, rgb(255 239 242 / 90%) 7px 14px); opacity: .84; transform: rotate(6deg); }
-.author-master .note-tape { left: -14px; background: repeating-linear-gradient(90deg, rgb(165 211 205 / 78%) 0 7px, rgb(222 240 236 / 88%) 7px 14px); transform: rotate(-19deg); }
-.note-heart { position: absolute; right: 9px; bottom: 2px; color: #cf4e62; font: 29px/1 var(--font-body); transform: rotate(9deg); }
+.note-tape { position: absolute; top: -11px; left: 61px; width: 52px; height: 25px; background: url("/assets/gingham-tape-short.png") center / 100% 100% no-repeat; transform: rotate(6deg); }
+.author-master .note-tape { left: -14px; filter: hue-rotate(183deg) saturate(.78) brightness(1.04); transform: rotate(-19deg); }
+.note-heart { position: absolute; right: 8px; bottom: -11px; width: 26px; height: 25px; background: url("/assets/red-heart-outline.png") center / contain no-repeat; color: transparent; font-size: 0; transform: rotate(9deg); }
 .note-delete { position: absolute; top: -7px; right: -7px; display: grid; width: 22px; height: 22px; place-items: center; padding: 0; border: 1.2px solid var(--paper-border); border-radius: 50%; background: #fff; color: var(--ink-kitty); box-shadow: 0 1px 3px rgb(150 120 125 / 28%); font: 11px var(--font-mono); }
