@@ -203,4 +203,18 @@ describe("CalendarStore mark seen", () => {
     await seen;
     expect(store.snapshot(september).unseenDays.has("2026-09-15")).toBe(true);
   });
+
+  it("does not revive an older suppressed receipt when a later idempotent call fails", async () => {
+    const unseen = deferred<Set<string>>();
+    const api = gateway([]);
+    vi.mocked(api.listUnseen).mockReturnValue(unseen.promise);
+    vi.mocked(api.markSeen).mockResolvedValueOnce().mockRejectedValueOnce(new Error("offline"));
+    const store = new CalendarStore(api);
+    const loading = store.loadMonth(september);
+    await store.markSeen("2026-09-15");
+    unseen.resolve(new Set(["2026-09-15"]));
+    await loading;
+    await store.markSeen("2026-09-15");
+    expect(store.snapshot(september).unseenDays.has("2026-09-15")).toBe(false);
+  });
 });

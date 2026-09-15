@@ -68,7 +68,7 @@ export class CalendarStore {
   private readonly seenGenerations = new Map<string, number>();
   private readonly seenAtVersion = new Map<string, number>();
   private unseenDays = new Set<string>();
-  private readonly suppressedUnseen = new Set<string>();
+  private readonly suppressedUnseen = new Map<string, number>();
   private mutationVersion = 0;
   private seenVersion = 0;
   private mutationMessage: string | null = null;
@@ -144,7 +144,7 @@ export class CalendarStore {
       for (const day of unseen) {
         const seenAt = this.seenAtVersion.get(day);
         if (seenAt !== undefined && seenAt > seenAtStart) {
-          this.suppressedUnseen.add(day);
+          this.suppressedUnseen.set(day, seenAt);
           continue;
         }
         if (seenAt !== undefined) this.seenAtVersion.delete(day);
@@ -303,7 +303,9 @@ export class CalendarStore {
     } catch {
       if (this.seenGenerations.get(day) === generation) {
         this.seenAtVersion.delete(day);
-        if (wasUnseen || this.suppressedUnseen.delete(day)) this.unseenDays.add(day);
+        const suppressedAt = this.suppressedUnseen.get(day);
+        this.suppressedUnseen.delete(day);
+        if (wasUnseen || suppressedAt === version) this.unseenDays.add(day);
         this.emit();
       }
     }
