@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createCalendarEvent, deleteCalendarEvent, markCalendarDaySeen, updateCalendarEvent } from "../../src/api/calendarAPI";
+import { createCalendarEvent, createCalendarNote, deleteCalendarEvent, listCalendarNotes, markCalendarDaySeen, updateCalendarEvent, updateCalendarNote } from "../../src/api/calendarAPI";
 
 const config = { apiBaseUrl: "/api/v1/calendar", token: "secret" };
 const response = {
@@ -37,5 +37,22 @@ describe("calendar mutation API", () => {
     expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: "DELETE" });
     expect(fetchMock.mock.calls[1][0]).toBe("/api/v1/calendar/unseen/seen");
     expect(fetchMock.mock.calls[1][1]).toMatchObject({ method: "POST", body: JSON.stringify({ date: "2026-09-15" }) });
+  });
+});
+
+describe("note API", () => {
+  it("uses a half-open month query and preserves tri-state PATCH fields", async () => {
+    const noteResponse = { id: "cmt_1", event_id: null, anchor_date: "2026-09-15", author: "kitty", body: "note", y: 10, liked: false, created_at: null, updated_at: null, deleted_at: null };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ notes: [noteResponse] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(noteResponse), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(noteResponse), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await listCalendarNotes(config, { year: 2026, month: 9 }, new AbortController().signal);
+    await createCalendarNote(config, { body: "note", anchor_date: "2026-09-15", y: 10, event_id: null });
+    await updateCalendarNote(config, "cmt_1", { y: 20 });
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/v1/calendar/notes?from=2026-09-01&to=2026-10-01");
+    expect(fetchMock.mock.calls[1][1]).toMatchObject({ method: "POST" });
+    expect(fetchMock.mock.calls[2][1]).toMatchObject({ body: JSON.stringify({ y: 20 }) });
   });
 });

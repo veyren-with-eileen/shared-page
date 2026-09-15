@@ -92,6 +92,38 @@ export interface SpanDraft {
   endDay: number;
 }
 
+export interface NoteDTO {
+  id: string;
+  eventId: string | null;
+  anchorDate: string;
+  author: string | null;
+  body: string;
+  y: number | null;
+  liked: boolean;
+  createdAt: string | null;
+  updatedAt: string | null;
+  deletedAt: string | null;
+}
+
+export interface CalendarNote {
+  id: string;
+  author: Author;
+  body: string;
+  timestamp: string;
+  liked: boolean;
+  linkedEventId: string | null;
+  y: number | null;
+  anchorDate: string;
+}
+
+export interface NoteWritePayload {
+  body?: string;
+  anchor_date?: string;
+  y?: number;
+  liked?: boolean;
+  event_id?: string | null;
+}
+
 export interface DayRange {
   start: number;
   end: number;

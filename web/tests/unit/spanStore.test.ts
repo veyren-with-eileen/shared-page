@@ -33,8 +33,9 @@ function deferred<T>() {
 
 function gateway(events: EventDTO[] = [dto()]): CalendarGateway {
   return {
-    listMonth: vi.fn().mockResolvedValue(events), listUnseen: vi.fn().mockResolvedValue(new Set()),
-    createEvent: vi.fn(), updateEvent: vi.fn(), deleteEvent: vi.fn(), markSeen: vi.fn()
+    listMonth: vi.fn().mockResolvedValue(events), listUnseen: vi.fn().mockResolvedValue(new Set()), listNotes: vi.fn().mockResolvedValue([]),
+    createEvent: vi.fn(), updateEvent: vi.fn(), deleteEvent: vi.fn(), markSeen: vi.fn(),
+    createNote: vi.fn(), updateNote: vi.fn(), deleteNote: vi.fn()
   };
 }
 

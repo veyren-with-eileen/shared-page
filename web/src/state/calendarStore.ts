@@ -1,7 +1,7 @@
 import type { CalendarGateway } from "../api/calendarAPI";
 import { CalendarApiError } from "../api/calendarAPI";
-import type { CalendarMonth, CalendarSpan, EventDTO, EventDraft, EventWritePayload, MonthPayload, SpanDraft } from "../domain/calendar";
-import { materializeEvents } from "../domain/calendarDTO";
+import type { CalendarMonth, CalendarNote, CalendarSpan, EventDTO, EventDraft, EventWritePayload, MonthPayload, NoteWritePayload, SpanDraft } from "../domain/calendar";
+import { materializeEvents, materializeNotes } from "../domain/calendarDTO";
 import { eventWritePayload, optimisticEvent, provisionalEvent } from "../domain/eventWrite";
 import { apiMonthRange, monthKey } from "../domain/calendarTime";
 import {
@@ -11,12 +11,14 @@ import {
   spanCreatePayload,
   spanPatchPayload
 } from "../domain/spanWrite";
+import { createNotePayload, noteFromDTO, provisionalNote } from "../domain/noteWrite";
 
 export type LoadStatus = "idle" | "loading" | "ready" | "error";
 
 interface MonthState {
   status: LoadStatus;
   dtos: EventDTO[];
+  notes: CalendarNote[];
   message: string;
   requestSequence: number;
   controller?: AbortController;
@@ -26,10 +28,13 @@ interface PendingSpanCreate {
   intent?: { kind: "update"; payload: EventWritePayload } | { kind: "delete" };
 }
 
+interface PendingNoteCreate { delete?: boolean; initial: NoteWritePayload }
+
 export interface CalendarSnapshot {
   status: LoadStatus;
   dtos: EventDTO[];
   payload: MonthPayload;
+  notesByDay: Map<number, CalendarNote[]>;
   unseenDays: Set<string>;
   message: string;
   mutationMessage: string | null;
@@ -78,11 +83,18 @@ export class CalendarStore {
   private readonly optimisticDeletes = new Set<string>();
   private readonly pendingSpanCreates = new Map<string, PendingSpanCreate>();
   private readonly pendingSpanSplits = new Set<string>();
+  private readonly canonicalNotes = new Map<string, CalendarNote>();
+  private readonly noteMutationGenerations = new Map<string, number>();
+  private readonly noteMutationQueues = new Map<string, Promise<void>>();
+  private readonly noteMutatedAtVersion = new Map<string, number>();
+  private readonly noteTextTimers = new Map<string, number>();
+  private readonly pendingNoteCreates = new Map<string, PendingNoteCreate>();
   private readonly seenGenerations = new Map<string, number>();
   private readonly seenAtVersion = new Map<string, number>();
   private unseenDays = new Set<string>();
   private readonly suppressedUnseen = new Map<string, number>();
   private mutationVersion = 0;
+  private noteMutationVersion = 0;
   private seenVersion = 0;
   private mutationMessage: string | null = null;
 
@@ -101,7 +113,7 @@ export class CalendarStore {
     const key = monthKey(month);
     let state = this.months.get(key);
     if (!state) {
-      state = { status: "idle", dtos: [], message: "tap a day to open it", requestSequence: 0 };
+      state = { status: "idle", dtos: [], notes: [], message: "tap a day to open it", requestSequence: 0 };
       this.months.set(key, state);
     }
     return state;
@@ -113,10 +125,22 @@ export class CalendarStore {
       status: state.status,
       dtos: state.dtos,
       payload: state.dtos.length ? materializeEvents(state.dtos, month) : emptyPayload(),
+      notesByDay: this.notesForMonth(state.notes, month),
       unseenDays: new Set(this.unseenDays),
       message: state.message,
       mutationMessage: this.mutationMessage
     };
+  }
+
+  private notesForMonth(notes: CalendarNote[], month: CalendarMonth): Map<number, CalendarNote[]> {
+    const prefix = `${monthKey(month)}-`;
+    const result = new Map<number, CalendarNote[]>();
+    for (const note of notes.filter((item) => item.anchorDate.startsWith(prefix))) {
+      const day = Number(note.anchorDate.slice(-2));
+      result.set(day, [...(result.get(day) ?? []), note]);
+    }
+    for (const [day, list] of result) result.set(day, [...list].sort((a, b) => (a.y ?? 0) - (b.y ?? 0)));
+    return result;
   }
 
   async loadMonth(month: CalendarMonth, force = false): Promise<void> {
@@ -127,14 +151,16 @@ export class CalendarStore {
     state.controller = controller;
     const sequence = ++state.requestSequence;
     const mutationAtStart = this.mutationVersion;
+    const noteMutationAtStart = this.noteMutationVersion;
     const seenAtStart = this.seenVersion;
     state.status = "loading";
     state.message = "syncing…";
     this.emit();
 
     try {
-      const [events, unseen] = await Promise.all([
+      const [events, noteDtos, unseen] = await Promise.all([
         this.gateway.listMonth(month, controller.signal),
+        this.gateway.listNotes(month, controller.signal),
         this.gateway.listUnseen(controller.signal)
       ]);
       if (controller.signal.aborted || sequence !== state.requestSequence) return;
@@ -152,6 +178,12 @@ export class CalendarStore {
       );
       state.dtos = [...fresh, ...protectedCurrent];
       for (const event of fresh) this.canonicalEvents.set(event.id, event);
+
+      const loadedNotes = [...materializeNotes(noteDtos, month).values()].flat();
+      const protectedNotes = state.notes.filter((note) => note.id.startsWith("local_") || this.noteMutationQueues.has(note.id) || this.noteTextTimers.has(note.id) || (this.noteMutatedAtVersion.get(note.id) ?? 0) > noteMutationAtStart);
+      const protectedNoteIds = new Set(protectedNotes.map((note) => note.id));
+      state.notes = [...loadedNotes.filter((note) => !protectedNoteIds.has(note.id)), ...protectedNotes];
+      for (const note of loadedNotes) if (!protectedNoteIds.has(note.id)) this.canonicalNotes.set(note.id, note);
 
       const filtered = new Set<string>();
       for (const day of unseen) {
@@ -178,6 +210,8 @@ export class CalendarStore {
   dispose() {
     for (const state of this.months.values()) state.controller?.abort();
     this.listeners.clear();
+    for (const timer of this.noteTextTimers.values()) globalThis.clearTimeout(timer);
+    this.noteTextTimers.clear();
   }
 
   event(id: string): EventDTO | null {
@@ -211,6 +245,39 @@ export class CalendarStore {
     this.emit();
   }
 
+  private replaceNote(id: string, replacement: CalendarNote | null) {
+    for (const [key, state] of this.months) {
+      const without = state.notes.filter((note) => note.id !== id && note.id !== replacement?.id);
+      state.notes = replacement && replacement.anchorDate.startsWith(`${key}-`) ? [...without, replacement] : without;
+    }
+    const version = ++this.noteMutationVersion;
+    this.noteMutatedAtVersion.set(id, version);
+    if (replacement) this.noteMutatedAtVersion.set(replacement.id, version);
+    this.emit();
+  }
+
+  note(id: string): CalendarNote | null {
+    for (const state of this.months.values()) {
+      const found = state.notes.find((note) => note.id === id);
+      if (found) return found;
+    }
+    return this.canonicalNotes.get(id) ?? null;
+  }
+
+  private reconcileEventLinks(localId: string, canonicalId: string | null) {
+    for (const state of this.months.values()) {
+      for (const note of [...state.notes]) {
+        if (note.linkedEventId !== localId) continue;
+        const updated = { ...note, linkedEventId: canonicalId };
+        this.replaceNote(note.id, updated);
+        if (!note.id.startsWith("local_")) {
+          this.canonicalNotes.set(note.id, updated);
+          void this.patchNote(note.id, { event_id: canonicalId }, updated);
+        }
+      }
+    }
+  }
+
   private failMutation(error: unknown, replacement?: { id: string; event: EventDTO | null }) {
     if (replacement) this.replaceEvent(replacement.id, replacement.event);
     this.mutationMessage = mutationErrorMessage(error);
@@ -227,13 +294,16 @@ export class CalendarStore {
     state.message = "syncing…";
     this.emit();
     try {
-      const [events, unseen] = await Promise.all([
+      const [events, noteDtos, unseen] = await Promise.all([
         this.gateway.listMonth(month, controller.signal),
+        this.gateway.listNotes(month, controller.signal),
         this.gateway.listUnseen(controller.signal)
       ]);
       if (controller.signal.aborted || sequence !== state.requestSequence) return;
       state.dtos = events;
       for (const event of events) this.canonicalEvents.set(event.id, event);
+      state.notes = [...materializeNotes(noteDtos, month).values()].flat();
+      for (const note of state.notes) this.canonicalNotes.set(note.id, note);
       this.unseenDays = unseen;
       state.status = "ready";
       state.message = "tap a day to open it";
@@ -257,9 +327,11 @@ export class CalendarStore {
       const canonical = await this.gateway.createEvent(payload);
       this.canonicalEvents.set(canonical.id, canonical);
       this.replaceEvent(tempId, canonical);
+      this.reconcileEventLinks(tempId, canonical.id);
       return canonical;
     } catch (error) {
       this.replaceEvent(tempId, null);
+      this.reconcileEventLinks(tempId, null);
       this.mutationMessage = mutationErrorMessage(error);
       this.emit();
       return null;
@@ -308,6 +380,8 @@ export class CalendarStore {
     const generation = (this.mutationGenerations.get(id) ?? 0) + 1;
     this.mutationGenerations.set(id, generation);
     this.optimisticDeletes.add(id);
+    const linkedNotes = [...this.months.values()].flatMap((state) => state.notes).filter((note) => note.linkedEventId === id);
+    for (const note of linkedNotes) this.replaceNote(note.id, { ...note, linkedEventId: null });
     this.mutationMessage = null;
     this.replaceEvent(id, null);
 
@@ -318,11 +392,17 @@ export class CalendarStore {
         await this.gateway.deleteEvent(id);
         this.canonicalEvents.delete(id);
         this.optimisticDeletes.delete(id);
+        await Promise.all(linkedNotes.filter((note) => !note.id.startsWith("local_")).map((note) => {
+          const unlinked = { ...note, linkedEventId: null };
+          this.canonicalNotes.set(note.id, unlinked);
+          return this.patchNote(note.id, { event_id: null }, unlinked);
+        }));
         deleted = true;
       } catch (error) {
         if (this.mutationGenerations.get(id) === generation) {
           this.optimisticDeletes.delete(id);
           this.replaceEvent(id, this.canonicalEvents.get(id) ?? before);
+          for (const note of linkedNotes) this.replaceNote(note.id, note);
           this.mutationMessage = mutationErrorMessage(error);
           this.emit();
         }
@@ -476,6 +556,130 @@ export class CalendarStore {
       this.pendingSpanSplits.delete(span.id);
       this.emit();
     }
+  }
+
+  addBlankNote(anchorDate: string, y: number): CalendarNote {
+    const note = provisionalNote(anchorDate, y);
+    this.replaceNote(note.id, note);
+    return note;
+  }
+
+  setNoteText(id: string, body: string) {
+    const before = this.note(id);
+    if (!before || before.author !== "kitty") return;
+    const updated = { ...before, body: body.slice(0, 40) };
+    this.replaceNote(id, updated);
+    const oldTimer = this.noteTextTimers.get(id);
+    if (oldTimer !== undefined) globalThis.clearTimeout(oldTimer);
+    if (id.startsWith("local_")) return;
+    const timer = globalThis.setTimeout(() => {
+      this.noteTextTimers.delete(id);
+      const current = this.note(id);
+      if (current) void this.patchNote(id, { body: current.body }, before);
+    }, 600);
+    this.noteTextTimers.set(id, timer);
+  }
+
+  async commitNote(id: string): Promise<CalendarNote | null> {
+    const note = this.note(id);
+    if (!note || !id.startsWith("local_") || !note.body.trim() || this.pendingNoteCreates.has(id)) return note;
+    const initial = createNotePayload(note);
+    if (initial.event_id?.startsWith("local_")) delete initial.event_id;
+    const pending: PendingNoteCreate = { initial };
+    this.pendingNoteCreates.set(id, pending);
+    try {
+      const dto = await this.gateway.createNote(initial);
+      const canonical = noteFromDTO(dto);
+      this.canonicalNotes.set(canonical.id, canonical);
+      if (pending.delete) {
+        this.replaceNote(id, null);
+        try { await this.gateway.deleteNote(canonical.id); this.canonicalNotes.delete(canonical.id); }
+        catch (error) { this.replaceNote(id, canonical); this.failMutation(error); }
+        return null;
+      }
+      const latest = this.note(id);
+      if (!latest) return null;
+      const reconciled = { ...canonical, body: latest.body, y: latest.y, liked: latest.liked, linkedEventId: latest.linkedEventId };
+      this.replaceNote(id, reconciled);
+      const sendableEvent = reconciled.linkedEventId?.startsWith("local_") ? undefined : reconciled.linkedEventId;
+      const changed = reconciled.body !== canonical.body || reconciled.y !== canonical.y || reconciled.liked !== canonical.liked || reconciled.linkedEventId !== canonical.linkedEventId;
+      if (changed) await this.patchNote(canonical.id, { body: reconciled.body, y: reconciled.y ?? 0, liked: reconciled.liked, ...(sendableEvent !== undefined ? { event_id: sendableEvent } : {}) }, canonical);
+      return this.note(canonical.id);
+    } catch (error) {
+      this.replaceNote(id, null);
+      this.failMutation(error);
+      return null;
+    } finally {
+      this.pendingNoteCreates.delete(id);
+    }
+  }
+
+  placeNote(id: string, y: number, eventId: string | null) {
+    const before = this.note(id);
+    if (!before || before.author !== "kitty") return;
+    const updated = { ...before, y, linkedEventId: eventId };
+    this.replaceNote(id, updated);
+    if (id.startsWith("local_")) return;
+    const payload: NoteWritePayload = { y };
+    if (!eventId?.startsWith("local_")) payload.event_id = eventId;
+    void this.patchNote(id, payload, before);
+  }
+
+  async deleteNote(id: string): Promise<boolean> {
+    const before = this.note(id);
+    if (!before || before.author !== "kitty") return false;
+    const timer = this.noteTextTimers.get(id);
+    if (timer !== undefined) globalThis.clearTimeout(timer);
+    this.noteTextTimers.delete(id);
+    this.replaceNote(id, null);
+    if (id.startsWith("local_")) {
+      const pending = this.pendingNoteCreates.get(id);
+      if (pending) pending.delete = true;
+      return true;
+    }
+    try {
+      await this.gateway.deleteNote(id);
+      this.canonicalNotes.delete(id);
+      return true;
+    } catch (error) {
+      this.replaceNote(id, before);
+      this.failMutation(error);
+      return false;
+    }
+  }
+
+  toggleNoteLike(id: string): Promise<CalendarNote | null> {
+    const before = this.note(id);
+    if (!before || before.author !== "master" || id.startsWith("local_")) return Promise.resolve(null);
+    const updated = { ...before, liked: !before.liked };
+    this.replaceNote(id, updated);
+    return this.patchNote(id, { liked: updated.liked }, before);
+  }
+
+  private patchNote(id: string, payload: NoteWritePayload, before: CalendarNote): Promise<CalendarNote | null> {
+    const generation = (this.noteMutationGenerations.get(id) ?? 0) + 1;
+    this.noteMutationGenerations.set(id, generation);
+    let result: CalendarNote | null = null;
+    const previous = this.noteMutationQueues.get(id) ?? Promise.resolve();
+    const queued = previous.catch(() => undefined).then(async () => {
+      try {
+        const canonical = noteFromDTO(await this.gateway.updateNote(id, payload));
+        this.canonicalNotes.set(id, canonical);
+        if (this.noteMutationGenerations.get(id) === generation) {
+          this.replaceNote(id, canonical);
+          result = canonical;
+        }
+      } catch (error) {
+        if (this.noteMutationGenerations.get(id) === generation) {
+          this.replaceNote(id, this.canonicalNotes.get(id) ?? before);
+          this.failMutation(error);
+        }
+      }
+    });
+    this.noteMutationQueues.set(id, queued);
+    return queued.finally(() => {
+      if (this.noteMutationQueues.get(id) === queued) this.noteMutationQueues.delete(id);
+    }).then(() => result);
   }
 
   async markSeen(day: string): Promise<void> {

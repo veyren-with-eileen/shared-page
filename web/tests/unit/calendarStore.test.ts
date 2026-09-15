@@ -28,7 +28,9 @@ function gateway(events: EventDTO[] = [event()], unseen = new Set<string>()): Ca
   return {
     listMonth: vi.fn().mockResolvedValue(events),
     listUnseen: vi.fn().mockResolvedValue(unseen),
-    createEvent: vi.fn(), updateEvent: vi.fn(), deleteEvent: vi.fn(), markSeen: vi.fn()
+    listNotes: vi.fn().mockResolvedValue([]),
+    createEvent: vi.fn(), updateEvent: vi.fn(), deleteEvent: vi.fn(), markSeen: vi.fn(),
+    createNote: vi.fn(), updateNote: vi.fn(), deleteNote: vi.fn()
   };
 }
 

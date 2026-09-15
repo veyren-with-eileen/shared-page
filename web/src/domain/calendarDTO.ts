@@ -8,7 +8,9 @@ import {
   type DayRange,
   type EventDTO,
   type JsonValue,
-  type MonthPayload
+  type MonthPayload,
+  type NoteDTO,
+  type CalendarNote
 } from "./calendar";
 import {
   dayIndex,
@@ -74,6 +76,61 @@ export function parseEventList(input: unknown): EventDTO[] {
     throw new Error("calendar response must contain an events array");
   }
   return (input as { events: unknown[] }).events.map(parseEventDTO);
+}
+
+export function parseNoteDTO(input: unknown): NoteDTO {
+  if (!input || typeof input !== "object") throw new Error("note must be an object");
+  const raw = input as Record<string, unknown>;
+  if (typeof raw.id !== "string" || typeof raw.anchor_date !== "string" || typeof raw.body !== "string") {
+    throw new Error("note requires id, anchor_date and body");
+  }
+  return {
+    id: raw.id,
+    eventId: nullableString(raw.event_id),
+    anchorDate: raw.anchor_date,
+    author: nullableString(raw.author),
+    body: raw.body,
+    y: nullableNumber(raw.y),
+    liked: raw.liked === true,
+    createdAt: nullableString(raw.created_at),
+    updatedAt: nullableString(raw.updated_at),
+    deletedAt: nullableString(raw.deleted_at)
+  };
+}
+
+export function parseNoteList(input: unknown): NoteDTO[] {
+  if (!input || typeof input !== "object" || !Array.isArray((input as { notes?: unknown }).notes)) {
+    throw new Error("notes response must contain a notes array");
+  }
+  return (input as { notes: unknown[] }).notes.map(parseNoteDTO);
+}
+
+function noteStamp(iso: string | null): string {
+  if (!iso) return "now";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "now";
+  const p = productDateParts(date);
+  return `${String(p.month).padStart(2, "0")}-${String(p.day).padStart(2, "0")} ${String(p.hour).padStart(2, "0")}:${String(p.minute).padStart(2, "0")}`;
+}
+
+export function materializeNotes(dtos: NoteDTO[], month: CalendarMonth): Map<number, CalendarNote[]> {
+  const result = new Map<number, CalendarNote[]>();
+  const prefix = `${month.year}-${String(month.month).padStart(2, "0")}-`;
+  for (const dto of dtos) {
+    if (dto.deletedAt !== null || !dto.anchorDate.startsWith(prefix)) continue;
+    const parsed = /^\d{4}-\d{2}-(\d{2})$/.exec(dto.anchorDate);
+    if (!parsed) continue;
+    const day = Number(parsed[1]);
+    if (day < 1 || day > daysInMonth(month)) continue;
+    const note: CalendarNote = {
+      id: dto.id, author: authorFromWire(dto.author), body: dto.body.slice(0, 40),
+      timestamp: noteStamp(dto.createdAt), liked: dto.liked, linkedEventId: dto.eventId,
+      y: dto.y, anchorDate: dto.anchorDate
+    };
+    result.set(day, [...(result.get(day) ?? []), note]);
+  }
+  for (const [day, notes] of result) result.set(day, notes.sort((a, b) => (a.y ?? 0) - (b.y ?? 0)));
+  return result;
 }
 
 export function authorFromWire(createdBy: string | null): Author {

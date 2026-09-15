@@ -1,7 +1,7 @@
 import type { ConnectionConfig } from "../config/connection";
-import type { CalendarMonth, EventDTO, EventWritePayload } from "../domain/calendar";
-import { parseEventDTO, parseEventList } from "../domain/calendarDTO";
-import { apiMonthRange } from "../domain/calendarTime";
+import type { CalendarMonth, EventDTO, EventWritePayload, NoteDTO, NoteWritePayload } from "../domain/calendar";
+import { parseEventDTO, parseEventList, parseNoteDTO, parseNoteList } from "../domain/calendarDTO";
+import { apiMonthRange, dayKey, nextMonth } from "../domain/calendarTime";
 
 export class CalendarApiError extends Error {
   constructor(
@@ -26,7 +26,7 @@ async function requestJson(
   query: URLSearchParams | undefined,
   signal: AbortSignal | undefined,
   method = "GET",
-  body?: EventWritePayload | { date: string }
+  body?: EventWritePayload | NoteWritePayload | { date: string }
 ): Promise<unknown> {
   const controller = new AbortController();
   const timeout = globalThis.setTimeout(() => controller.abort(), 12_000);
@@ -80,10 +80,31 @@ async function requestJson(
 export interface CalendarGateway {
   listMonth(month: CalendarMonth, signal: AbortSignal): Promise<EventDTO[]>;
   listUnseen(signal: AbortSignal): Promise<Set<string>>;
+  listNotes(month: CalendarMonth, signal: AbortSignal): Promise<NoteDTO[]>;
   createEvent(payload: EventWritePayload): Promise<EventDTO>;
   updateEvent(id: string, payload: EventWritePayload): Promise<EventDTO>;
   deleteEvent(id: string): Promise<EventDTO>;
   markSeen(day: string): Promise<void>;
+  createNote(payload: NoteWritePayload): Promise<NoteDTO>;
+  updateNote(id: string, payload: NoteWritePayload): Promise<NoteDTO>;
+  deleteNote(id: string): Promise<NoteDTO>;
+}
+
+export async function listCalendarNotes(config: ConnectionConfig, month: CalendarMonth, signal: AbortSignal): Promise<NoteDTO[]> {
+  const query = new URLSearchParams({ from: dayKey(month, 1), to: dayKey(nextMonth(month), 1) });
+  return parseNoteList(await requestJson(config, "notes", query, signal));
+}
+
+export async function createCalendarNote(config: ConnectionConfig, payload: NoteWritePayload): Promise<NoteDTO> {
+  return parseNoteDTO(await requestJson(config, "notes", undefined, undefined, "POST", payload));
+}
+
+export async function updateCalendarNote(config: ConnectionConfig, id: string, payload: NoteWritePayload): Promise<NoteDTO> {
+  return parseNoteDTO(await requestJson(config, `notes/${encodeURIComponent(id)}`, undefined, undefined, "PATCH", payload));
+}
+
+export async function deleteCalendarNote(config: ConnectionConfig, id: string): Promise<NoteDTO> {
+  return parseNoteDTO(await requestJson(config, `notes/${encodeURIComponent(id)}`, undefined, undefined, "DELETE"));
 }
 
 export async function listCalendarMonth(
@@ -139,9 +160,13 @@ export function createCalendarGateway(config: ConnectionConfig): CalendarGateway
   return {
     listMonth: (month, signal) => listCalendarMonth(config, month, signal),
     listUnseen: (signal) => listUnseenDays(config, signal),
+    listNotes: (month, signal) => listCalendarNotes(config, month, signal),
     createEvent: (payload) => createCalendarEvent(config, payload),
     updateEvent: (id, payload) => updateCalendarEvent(config, id, payload),
     deleteEvent: (id) => deleteCalendarEvent(config, id),
-    markSeen: (day) => markCalendarDaySeen(config, day)
+    markSeen: (day) => markCalendarDaySeen(config, day),
+    createNote: (payload) => createCalendarNote(config, payload),
+    updateNote: (id, payload) => updateCalendarNote(config, id, payload),
+    deleteNote: (id) => deleteCalendarNote(config, id)
   };
 }
