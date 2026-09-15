@@ -1,80 +1,17 @@
 import { useCallback, useEffect, useState } from "preact/hooks";
-import type { ConnectionConfig } from "../config/connection";
-import type { CalendarMonth, EventDTO, MonthPayload } from "../domain/calendar";
-import { materializeEvents } from "../domain/calendarDTO";
+import type { CalendarMonth } from "../domain/calendar";
+import type { CalendarStore } from "./calendarStore";
 import { monthKey } from "../domain/calendarTime";
-import {
-  CalendarApiError,
-  listCalendarMonth,
-  listUnseenDays
-} from "../api/calendarAPI";
 
-export type LoadStatus = "idle" | "loading" | "ready" | "error";
-
-function emptyPayload(): MonthPayload {
-  return { events: new Map(), spans: [], periods: [] };
-}
-
-function errorMessage(error: unknown): string {
-  if (!(error instanceof CalendarApiError)) return "couldn't load · tap to retry";
-  switch (error.kind) {
-    case "unauthorized":
-      return "token rejected · check connection";
-    case "not-found":
-      return "calendar route not found";
-    case "bad-request":
-      return "calendar request was rejected";
-    default:
-      return "couldn't load · tap to retry";
-  }
-}
-
-export function useCalendarMonth(config: ConnectionConfig, month: CalendarMonth) {
-  const [status, setStatus] = useState<LoadStatus>("idle");
-  const [dtos, setDtos] = useState<EventDTO[]>([]);
-  const [payload, setPayload] = useState<MonthPayload>(emptyPayload);
-  const [unseenDays, setUnseenDays] = useState<Set<string>>(new Set());
-  const [message, setMessage] = useState("tap a day to open it");
-  const [revision, setRevision] = useState(0);
-
-  const retry = useCallback(() => setRevision((value) => value + 1), []);
+export function useCalendarMonth(store: CalendarStore, month: CalendarMonth) {
+  const [, setRevision] = useState(0);
+  const retry = useCallback(() => void store.loadMonth(month, true), [store, monthKey(month)]);
 
   useEffect(() => {
-    if (!config.token) {
-      setStatus("idle");
-      setDtos([]);
-      setPayload(emptyPayload());
-      setUnseenDays(new Set());
-      setMessage("calendar connection required");
-      return;
-    }
+    const unsubscribe = store.subscribe(() => setRevision((value) => value + 1));
+    void store.loadMonth(month);
+    return unsubscribe;
+  }, [store, monthKey(month)]);
 
-    const controller = new AbortController();
-    setStatus("loading");
-    setMessage("syncing…");
-
-    Promise.all([
-      listCalendarMonth(config, month, controller.signal),
-      listUnseenDays(config, controller.signal)
-    ])
-      .then(([events, unseen]) => {
-        if (controller.signal.aborted) return;
-        setDtos(events);
-        setPayload(materializeEvents(events, month));
-        setUnseenDays(unseen);
-        setStatus("ready");
-        setMessage("tap a day to open it");
-      })
-      .catch((error: unknown) => {
-        if (controller.signal.aborted) return;
-        setDtos([]);
-        setPayload(emptyPayload());
-        setStatus("error");
-        setMessage(errorMessage(error));
-      });
-
-    return () => controller.abort();
-  }, [config.apiBaseUrl, config.token, monthKey(month), revision]);
-
-  return { status, dtos, payload, unseenDays, message, retry };
+  return { ...store.snapshot(month), retry };
 }

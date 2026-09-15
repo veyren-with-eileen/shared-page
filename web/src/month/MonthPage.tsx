@@ -1,4 +1,3 @@
-import type { ConnectionConfig } from "../config/connection";
 import {
   AUTHOR_LABEL,
   SPECIAL_DAY_TYPES,
@@ -19,11 +18,12 @@ import {
   weekRows
 } from "../domain/calendarTime";
 import { useCalendarMonth } from "../state/useCalendarMonth";
+import type { CalendarStore } from "../state/calendarStore";
 import { CanvasViewport } from "../app/CanvasViewport";
 import "./month.css";
 
 interface MonthPageProps {
-  config: ConnectionConfig;
+  store: CalendarStore;
   month: CalendarMonth;
   onMonthChange(month: CalendarMonth): void;
   onDayOpen(dayKey: string): void;
@@ -43,8 +43,8 @@ function periodForDay(payload: MonthPayload, day: number): DayRange | undefined 
   return payload.periods.find((period) => day >= period.start && day <= period.end);
 }
 
-export function MonthPage({ config, month, onMonthChange, onDayOpen }: MonthPageProps) {
-  const { status, payload, unseenDays, message, retry } = useCalendarMonth(config, month);
+export function MonthPage({ store, month, onMonthChange, onDayOpen }: MonthPageProps) {
+  const { status, payload, unseenDays, message, retry, mutationMessage } = useCalendarMonth(store, month);
   const today = todayInMonth(month);
   const days = monthGrid(month);
 
@@ -177,6 +177,11 @@ export function MonthPage({ config, month, onMonthChange, onDayOpen }: MonthPage
             </span>
           </footer>
         </section>
+        {mutationMessage && (
+          <button class="mutation-toast" type="button" onClick={() => store.clearMutationMessage()}>
+            {mutationMessage}
+          </button>
+        )}
       </main>
     </CanvasViewport>
   );

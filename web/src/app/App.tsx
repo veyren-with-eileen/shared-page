@@ -1,4 +1,5 @@
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useMemo, useState } from "preact/hooks";
+import { createCalendarGateway } from "../api/calendarAPI";
 import {
   clearSessionConnection,
   loadConnection,
@@ -8,6 +9,7 @@ import {
 import { monthKey } from "../domain/calendarTime";
 import { DayPage } from "../day/DayPage";
 import { MonthPage } from "../month/MonthPage";
+import { CalendarStore } from "../state/calendarStore";
 import { ConnectionSetup } from "./ConnectionSetup";
 import {
   dayRouteUrl,
@@ -31,6 +33,12 @@ export function App() {
   const [connection, setConnection] = useState<ConnectionConfig>(loadConnection);
   const [editingConnection, setEditingConnection] = useState(!connection.token);
   const [route, setRoute] = useState<AppRoute>(() => routeFromUrl(new URL(window.location.href)));
+  const calendar = useMemo(
+    () => new CalendarStore(createCalendarGateway(connection)),
+    [connection.apiBaseUrl, connection.token]
+  );
+
+  useEffect(() => () => calendar.dispose(), [calendar]);
 
   useEffect(() => {
     const state = currentNavigationState();
@@ -99,7 +107,7 @@ export function App() {
     <div class="app-shell">
       {route.kind === "month" ? (
         <MonthPage
-          config={connection}
+          store={calendar}
           month={route.month}
           onMonthChange={(month) =>
             pushRoute({ kind: "month", month }, monthRouteUrl(month))
@@ -108,7 +116,7 @@ export function App() {
         />
       ) : (
         <DayPage
-          config={connection}
+          store={calendar}
           dateKey={route.dayKey}
           onBack={backToMonth}
           onDayChange={changeDay}

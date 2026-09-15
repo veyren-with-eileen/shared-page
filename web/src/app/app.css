@@ -19,6 +19,22 @@
   cursor: pointer;
 }
 
+.mutation-toast {
+  position: absolute;
+  z-index: 60;
+  right: 18px;
+  bottom: 86px;
+  left: 18px;
+  padding: 10px 14px;
+  border: 1.2px solid var(--paper-border);
+  border-radius: 12px;
+  background: rgb(255 255 255 / 96%);
+  color: var(--ink-kitty);
+  box-shadow: 0 4px 12px rgb(92 66 73 / 15%);
+  font: 12px var(--font-body);
+  text-align: left;
+}
+
 .connection-screen {
   min-height: 100vh;
   min-height: 100svh;
