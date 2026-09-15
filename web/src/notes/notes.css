@@ -24,7 +24,7 @@
   clip-path: polygon(0 0, 100% 0, 100% 92%, 96% 96%, 91% 92%, 85% 98%, 78% 93%, 71% 99%, 64% 93%, 57% 98%, 49% 93%, 42% 99%, 35% 93%, 28% 98%, 21% 92%, 14% 98%, 7% 93%, 0 97%);
   content: "";
 }
-.torn-note.is-lifted { z-index: 20; filter: drop-shadow(3px 7px 8px rgb(150 120 125 / 42%)); touch-action: none; }
+.torn-note.is-lifted { z-index: 20; filter: drop-shadow(3px 7px 8px rgb(150 120 125 / 42%)); scale: 1.05; touch-action: none; }
 .torn-note.author-master { color: var(--ink-note-master); }
 .torn-note.author-master { touch-action: manipulation; }
 .torn-note small { display: block; color: var(--ink-kitty); font: 7px var(--font-mono); letter-spacing: .4px; }
