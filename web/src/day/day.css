@@ -1,4 +1,4 @@
-.day-canvas {
+.calendar-canvas.day-canvas {
   position: relative;
   display: flex;
   height: 100%;
