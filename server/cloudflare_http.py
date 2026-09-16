@@ -67,11 +67,7 @@ async def static_assets(request: Request, asset_path: str) -> Response:
         raise HTTPException(status_code=404, detail="asset binding unavailable")
     path = asset_path or "index.html"
     upstream = await assets.fetch(f"https://assets.local/{path}")
-    body = await upstream.arrayBuffer()
-    try:
-        data = body.to_bytes()
-    except AttributeError:
-        data = bytes(body)
+    data = await upstream.bytes()
     headers: dict[str, str] = {}
     for name in ("content-type", "cache-control", "etag", "last-modified"):
         value = upstream.headers.get(name)
