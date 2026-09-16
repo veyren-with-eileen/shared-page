@@ -1,6 +1,6 @@
 """Pywrangler entry point."""
 
-import asgi
+from workers import asgi
 
 from cloudflare_http import app
 

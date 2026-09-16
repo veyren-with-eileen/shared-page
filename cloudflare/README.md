@@ -24,6 +24,7 @@ and forwards its arguments through the private Service Binding.
 
 - Node.js 20.19 or newer
 - Python 3.13+ for the Cloudflare Python Worker toolchain
+- [uv](https://docs.astral.sh/uv/getting-started/installation/) for Pywrangler
 - a Cloudflare account with Workers, D1, R2, and KV enabled
 - Wrangler authenticated locally (`npx wrangler login`)
 
@@ -88,6 +89,9 @@ Production startup does not execute DDL or legacy SQLite migrations.
 ## 4. Deploy
 
 Deploy the Application Worker first so the MCP Service Binding has a target.
+The Application deploy script intentionally runs Cloudflare's Python-aware
+`pywrangler deploy`; plain `wrangler deploy` does not provision the external
+Python SDK used by FastAPI/ASGI.
 
 ```bash
 cd cloudflare/application
