@@ -107,7 +107,11 @@ def export_sqlite(source: Path, destination: Path,
         raise FileNotFoundError(source)
     connection = sqlite3.connect(f"file:{source}?mode=ro", uri=True)
     counts: dict[str, int] = {}
-    lines = ["PRAGMA foreign_keys=OFF;", "BEGIN TRANSACTION;"]
+    # D1's bulk import path rejects explicit BEGIN/COMMIT statements.  The
+    # tables are already emitted in parent-before-child order, so the export
+    # can keep foreign-key enforcement enabled and remain directly consumable
+    # by `wrangler d1 execute --file`.
+    lines: list[str] = []
     try:
         for table, columns in TABLE_COLUMNS.items():
             rows = list(_rows(connection, table, timezone_name))
@@ -117,7 +121,7 @@ def export_sqlite(source: Path, destination: Path,
                 lines.append(
                     f"INSERT INTO {table} ({','.join(columns)}) VALUES ({values});"
                 )
-        lines.extend(["COMMIT;", "PRAGMA foreign_keys=ON;", ""])
+        lines.append("")
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_text("\n".join(lines), encoding="utf-8", newline="\n")
         return counts

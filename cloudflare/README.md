@@ -129,6 +129,8 @@ npx wrangler d1 execute DB --remote \
 
 The deterministic export retains soft-deleted rows and explicit change IDs,
 generates mutation keys for legacy changes, and adapts the old comments shape.
+It emits parent-before-child inserts without explicit `BEGIN` / `COMMIT` or
+foreign-key pragmas so the file is directly compatible with D1 bulk import.
 
 Preview page uploads first, then explicitly execute them:
 

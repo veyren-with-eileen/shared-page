@@ -62,9 +62,13 @@ class MigrationToolTests(unittest.TestCase):
         self.assertEqual(set(counts.values()), {1})
         sql = output.read_text(encoding="utf-8")
         self.assertIn("legacy-change:1", sql)
+        self.assertNotIn("BEGIN TRANSACTION", sql)
+        self.assertNotIn("COMMIT;", sql)
+        self.assertNotIn("PRAGMA foreign_keys", sql)
 
         target = sqlite3.connect(":memory:")
         target.executescript(MIGRATION.read_text(encoding="utf-8"))
+        target.execute("PRAGMA foreign_keys=ON")
         target.executescript(sql)
         event = target.execute("SELECT status,revision,deleted_at FROM calendar_events").fetchone()
         self.assertEqual(event, ("deleted", 2, "deleted-at"))
