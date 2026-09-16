@@ -19,7 +19,6 @@ from fastapi.responses import Response
 import config
 from calendar_core import (
     CalendarDelivery,
-    Storage,
     _parse_datetime,
     add_comment,
     complete_calendar_delivery,
@@ -37,11 +36,12 @@ from calendar_core import (
     update_event,
     update_note,
 )
+from storage_types import CalendarStorage
 
 router = APIRouter(prefix="/calendar", tags=["calendar"])
 
 
-def get_storage(request: Request) -> Storage:
+def get_storage(request: Request) -> CalendarStorage:
     return request.app.state.storage
 
 
@@ -209,7 +209,7 @@ async def calendar_env_seen(
 @router.post("/extract", dependencies=[Depends(_require_calendar_token)])
 async def calendar_extract(
     payload: dict[str, Any] = Body(...),
-    storage: Storage = Depends(get_storage),
+    storage: CalendarStorage = Depends(get_storage),
 ) -> dict[str, Any]:
     import extractor
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Optional, Sequence
 
-from storage import (
+from storage_types import (
     CalendarStorage,
     PageObject,
     PageStorage,

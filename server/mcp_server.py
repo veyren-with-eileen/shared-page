@@ -33,7 +33,8 @@ import mcp.types as types
 from mcp.server.lowlevel import Server
 
 import config
-from calendar_core import Storage, execute_calendar_tool
+from calendar_core import execute_calendar_tool
+from storage import SQLiteStorage
 
 logger = logging.getLogger(__name__)
 
@@ -97,13 +98,13 @@ CALENDAR_TOOL: dict = {
     },
 }
 
-_storage: Optional[Storage] = None
+_storage: Optional[SQLiteStorage] = None
 
 
-async def _get_storage() -> Storage:
+async def _get_storage() -> SQLiteStorage:
     global _storage
     if _storage is None:
-        storage = Storage(config.CALENDAR_DB, config.PAGES_DIR)
+        storage = SQLiteStorage(config.CALENDAR_DB, config.PAGES_DIR)
         await storage.connect()
         _storage = storage
     return _storage

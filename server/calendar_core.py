@@ -19,7 +19,7 @@ from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
 import config
-from storage import CalendarStorage, SQLiteStorage, Statement, StorageConflict
+from storage_types import CalendarStorage, Statement, StorageConflict
 
 logger = logging.getLogger(__name__)
 
@@ -117,11 +117,6 @@ CREATE TABLE IF NOT EXISTS calendar_consumer_state (
   PRIMARY KEY (consumer, conversation_id)
 );
 """
-
-
-# Existing local entry points keep importing ``Storage``; production injects
-# the D1 adapter instead.
-Storage = SQLiteStorage
 
 
 @dataclass

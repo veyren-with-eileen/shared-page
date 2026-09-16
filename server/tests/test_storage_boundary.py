@@ -4,7 +4,7 @@ import asyncio
 import unittest
 
 import calendar_core as cal
-from storage import Statement, StorageConflict
+from storage_types import Statement, StorageConflict
 from tests.support import MemoryStorage
 
 
