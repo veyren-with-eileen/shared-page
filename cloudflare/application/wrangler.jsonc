@@ -1,0 +1,31 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "shared-page-app",
+  "main": "../../server/cloudflare_app.py",
+  "compatibility_date": "2026-09-16",
+  "compatibility_flags": ["python_workers"],
+  "assets": {
+    "directory": "../../web/dist",
+    "binding": "ASSETS",
+    "run_worker_first": true,
+    "not_found_handling": "single-page-application"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "shared-page-calendar",
+      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "PAGES",
+      "bucket_name": "shared-page-pages"
+    }
+  ],
+  "vars": {
+    "CALENDAR_USER_NAME": "USER",
+    "CALENDAR_ASSISTANT_NAME": "ASSISTANT"
+  }
+}

@@ -29,6 +29,12 @@ _wip-*/
 
 # ====== 系统垃圾 ======
 .DS_Store
+cloudflare/**/node_modules/
+cloudflare/**/.wrangler/
+cloudflare/**/.dev.vars
+cloudflare/**/worker-configuration.d.ts
+cloudflare/application/.venv/
+cloudflare/application/uv.lock
 xcuserdata/
 DerivedData/
 build/
