@@ -33,7 +33,7 @@ For a managed runtime, use `public/runtime-config.example.js` as the template an
 
 The Web product timezone is intentionally a single `Asia/Taipei` constant in `src/domain/calendar.ts`. It is not a runtime connection setting. Generalizing the entire client to arbitrary product timezones is a separate future change.
 
-For production, serve the PWA and proxy `/api/v1/calendar/*` to the existing backend on the same origin. Direct cross-origin browser access requires backend CORS support and is not assumed by this checkpoint.
+For Cloudflare production, the Application Worker serves this build and `/api/v1/calendar/*` on the same HTTPS origin. No CORS or separate proxy is required; see [`../cloudflare/README.md`](../cloudflare/README.md). Direct cross-origin browser access is not assumed.
 
 ## Routes
 

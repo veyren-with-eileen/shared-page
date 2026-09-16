@@ -480,6 +480,15 @@ app 里的手写字用的是[霞鹜文楷](https://github.com/lxgw/LxgwWenKai)�
 
 ---
 
+## Cloudflare-native 部署
+
+正式的 Cloudflare runtime（PWA + REST Application Worker + D1 + R2 + OAuth
+remote MCP Worker）與既有資料搬遷流程請見
+[`cloudflare/README.md`](cloudflare/README.md)。原本 Python/SQLite runtime 仍保留，
+供本機開發與 reference regression 使用。
+
+---
+
 ## 已知的取舍
 
 
