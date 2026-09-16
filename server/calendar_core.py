@@ -3,12 +3,11 @@
 Calendar state is global.  The REST API (routes.py) and the MCP server
 (mcp_server.py) use this same core.  All stored timestamps are UTC ISO
 strings.  Human-facing dates use the configured product timezone
-(CALENDAR_TZ, default Asia/Shanghai).
+(CALENDAR_TZ, default Asia/Taipei).
 """
 
 from __future__ import annotations
 
-import asyncio
 import base64
 import json
 import logging
@@ -16,20 +15,16 @@ import os
 import uuid
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
-from pathlib import Path
 from typing import Any, Optional
 from zoneinfo import ZoneInfo
 
-import aiosqlite
-
 import config
+from storage import CalendarStorage, SQLiteStorage, Statement, StorageConflict
 
 logger = logging.getLogger(__name__)
 
 # 全服务一个产品时区。名字沿用生产版的 _BJ（北京），值跟着 CALENDAR_TZ 走
 _BJ = ZoneInfo(config.CALENDAR_TZ)
-_LOCK = asyncio.Lock()
-_SCHEMA_LOCK = asyncio.Lock()
 _CONSUMER = "master"
 _KITTY_CONSUMER = "kitty"   # 反方向：AI 侧改了、用户还没点进那一页看
 
@@ -40,7 +35,7 @@ CREATE TABLE IF NOT EXISTS calendar_events (
   description       TEXT,
   starts_at         TEXT NOT NULL,
   ends_at           TEXT NOT NULL,
-  timezone          TEXT NOT NULL DEFAULT 'Asia/Shanghai',
+  timezone          TEXT NOT NULL DEFAULT 'Asia/Taipei',
   precision         TEXT NOT NULL DEFAULT 'hour',
   event_type        TEXT,
   source            TEXT NOT NULL,
@@ -67,12 +62,15 @@ CREATE TABLE IF NOT EXISTS calendar_event_changes (
   source         TEXT NOT NULL,
   snapshot       JSON NOT NULL,
   notify_master  INTEGER NOT NULL DEFAULT 0,
+  mutation_key   TEXT,
   created_at     TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_calendar_changes_event
   ON calendar_event_changes(event_id, id DESC);
 CREATE INDEX IF NOT EXISTS idx_calendar_changes_notify
   ON calendar_event_changes(notify_master, id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_calendar_changes_mutation
+  ON calendar_event_changes(mutation_key) WHERE mutation_key IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS calendar_change_receipts (
   change_id  INTEGER NOT NULL,
@@ -98,6 +96,7 @@ CREATE TABLE IF NOT EXISTS calendar_comments (
   body        TEXT NOT NULL,
   y           REAL,
   liked       INTEGER NOT NULL DEFAULT 0,
+  row_version INTEGER NOT NULL DEFAULT 1,
   created_at  TEXT NOT NULL,
   updated_at  TEXT NOT NULL,
   deleted_at  TEXT,
@@ -120,32 +119,9 @@ CREATE TABLE IF NOT EXISTS calendar_consumer_state (
 """
 
 
-class Storage:
-    """最薄的一层：只负责连库和建表。
-
-    核心函数的签名跟生产版一致 —— 都收一个带 ``_conn``（aiosqlite 连接）的
-    storage 对象，所以这里只要把连接挂在 ``_conn`` 上，其余函数一个签名都不用动。
-    REST 进程和 MCP 进程可能同时开着同一个库文件，所以走 WAL + busy_timeout。
-    """
-
-    def __init__(self, db_path: str) -> None:
-        self.db_path = Path(db_path)
-        self._conn: Optional[aiosqlite.Connection] = None
-        self._calendar_schema_ready = False
-
-    async def connect(self) -> None:
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = await aiosqlite.connect(self.db_path)
-        self._conn.row_factory = aiosqlite.Row
-        await self._conn.execute("PRAGMA journal_mode=WAL")
-        await self._conn.execute("PRAGMA busy_timeout=5000")
-        await ensure_calendar_schema(self)
-
-    async def close(self) -> None:
-        if self._conn is not None:
-            await self._conn.close()
-            self._conn = None
-            self._calendar_schema_ready = False
+# Existing local entry points keep importing ``Storage``; production injects
+# the D1 adapter instead.
+Storage = SQLiteStorage
 
 
 @dataclass
@@ -163,6 +139,11 @@ def _now() -> datetime:
 
 def _iso(value: datetime) -> str:
     return value.astimezone(timezone.utc).isoformat(timespec="seconds")
+
+
+def _audit_iso(value: datetime) -> str:
+    """Audit/CAS timestamps retain microseconds to order concurrent writes."""
+    return value.astimezone(timezone.utc).isoformat(timespec="microseconds")
 
 
 def _json(value: Any) -> str:
@@ -210,14 +191,14 @@ def _row_event(row: Any) -> dict[str, Any]:
     return data
 
 
-async def _fetchall(conn, sql: str, params: tuple[Any, ...] = ()) -> list[Any]:
-    async with conn.execute(sql, params) as cur:
-        return list(await cur.fetchall())
+async def _fetchall(storage: CalendarStorage, sql: str,
+                    params: tuple[Any, ...] = ()) -> list[Any]:
+    return await storage.fetch_all(sql, params)
 
 
-async def _fetchone(conn, sql: str, params: tuple[Any, ...] = ()) -> Any:
-    async with conn.execute(sql, params) as cur:
-        return await cur.fetchone()
+async def _fetchone(storage: CalendarStorage, sql: str,
+                    params: tuple[Any, ...] = ()) -> Any:
+    return await storage.fetch_one(sql, params)
 
 
 def _anchor_date_of(value: Optional[str]) -> Optional[str]:
@@ -234,91 +215,11 @@ def _anchor_date_of(value: Optional[str]) -> Optional[str]:
     return dt.astimezone(_BJ).date().isoformat()
 
 
-async def _migrate_comments_v2(conn) -> bool:
-    """便签表升级：event_id 放开可空、加 anchor_date / y / liked、外键改 SET NULL。
-
-    SQLite 改不了列的可空性和外键，只能整表重建。这一步必须跑在 CALENDAR_DDL 前面 ——
-    新的 anchor_date 索引在老表上建不出来。跑过一次之后是纯 no-op。
-    （全新部署永远走不进来，留着它是为了从老库结构平滑升级）
-    """
-    cur = await conn.execute("PRAGMA table_info(calendar_comments)")
-    cols = [row[1] for row in await cur.fetchall()]
-    if not cols:
-        return False                      # 全新库，等下面的 DDL 直接建新表
-    if "anchor_date" in cols:
-        return False                      # 已经升级过了
-
-    logger.info("calendar: migrating calendar_comments to v2 (anchor_date / y / liked)")
-    # 整段包进一条事务：中途崩掉要么全成要么全不成。
-    # 没有它的话，崩在 ALTER 和 CREATE 之间会留下「老表叫 v1、新表不存在」的半截状态，
-    # 下次启动 init_schema 用老 DDL 把 calendar_comments 凭空重建出来，迁移再想改名就撞 v1，
-    # 抛 OperationalError 穿透到上层 → REST 全线 500、calendar tool 全线报错，要人手进库救
-    await conn.execute("BEGIN IMMEDIATE")
-    cur = await conn.execute(
-        "SELECT c.id, c.event_id, c.author, c.body, c.created_at, c.updated_at, "
-        "       c.deleted_at, e.starts_at "
-        "FROM calendar_comments c LEFT JOIN calendar_events e ON e.id = c.event_id"
-    )
-    rows = await cur.fetchall()
-
-    # 索引跟着表走：RENAME 会把 idx_calendar_comments_event 一起带到 v1 上去，
-    # 之后 CALENDAR_DDL 里那句 CREATE INDEX IF NOT EXISTS 因为重名被静默跳过，
-    # 新表就永远没有这个索引了。先删掉再改名
-    await conn.execute("DROP INDEX IF EXISTS idx_calendar_comments_event")
-    await conn.execute("DROP INDEX IF EXISTS idx_calendar_comments_date")
-    await conn.execute("ALTER TABLE calendar_comments RENAME TO calendar_comments_v1")
-    await conn.execute(
-        """CREATE TABLE calendar_comments (
-  id          TEXT PRIMARY KEY,
-  event_id    TEXT,
-  anchor_date TEXT NOT NULL,
-  author      TEXT NOT NULL,
-  body        TEXT NOT NULL,
-  y           REAL,
-  liked       INTEGER NOT NULL DEFAULT 0,
-  created_at  TEXT NOT NULL,
-  updated_at  TEXT NOT NULL,
-  deleted_at  TEXT,
-  FOREIGN KEY (event_id) REFERENCES calendar_events(id) ON DELETE SET NULL
-)"""
-    )
-    moved = 0
-    for r in rows:
-        cid, event_id, author, body, created_at, updated_at, deleted_at, starts_at = r
-        # 挂在日程上的，anchor 就是那条日程那天；挂不上的退回它自己被写下来的那天
-        anchor = _anchor_date_of(starts_at) or _anchor_date_of(created_at)
-        if not anchor:
-            anchor = datetime.now(_BJ).date().isoformat()
-        await conn.execute(
-            "INSERT INTO calendar_comments"
-            "(id,event_id,anchor_date,author,body,y,liked,created_at,updated_at,deleted_at) "
-            "VALUES(?,?,?,?,?,NULL,0,?,?,?)",
-            (cid, event_id, anchor, author, body, created_at, updated_at, deleted_at),
-        )
-        moved += 1
-    await conn.execute("COMMIT")
-    # 老表留着不删，出事随时能捞回来。占不了多少地方
-    logger.info("calendar: calendar_comments v2 migration done, moved %s rows", moved)
-    return True
+async def ensure_calendar_schema(storage: CalendarStorage) -> None:
+    await storage.ensure_schema(CALENDAR_DDL)
 
 
-async def ensure_calendar_schema(storage) -> None:
-    if bool(getattr(storage, "_calendar_schema_ready", False)):
-        return
-    conn = storage._conn
-    if conn is None:
-        raise RuntimeError("storage is not connected")
-    async with _SCHEMA_LOCK:
-        if bool(getattr(storage, "_calendar_schema_ready", False)):
-            return
-        await _migrate_comments_v2(conn)      # 必须在 DDL 之前，见函数注释
-        await conn.executescript(CALENDAR_DDL)
-        await conn.commit()
-        storage._calendar_schema_ready = True
-
-
-async def _insert_change(
-    conn,
+def _change_statements(
     *,
     event: dict[str, Any],
     action: str,
@@ -326,42 +227,50 @@ async def _insert_change(
     source: str,
     notify_master: bool,
     notify_kitty: bool = False,
-) -> int:
-    cur = await conn.execute(
-        "INSERT INTO calendar_event_changes("
-        "event_id,event_revision,action,actor,source,snapshot,notify_master,created_at"
-        ") VALUES(?,?,?,?,?,?,?,?)",
-        (
-            event["id"], int(event.get("revision") or 1), action, actor, source,
-            _json(event), 1 if notify_master else 0, _iso(_now()),
-        ),
-    )
-    change_id = int(cur.lastrowid)
+    mutation_key: str,
+    guard_table: str = "calendar_events",
+    guard_id: Optional[str] = None,
+    guard_version: Optional[int] = None,
+    guard_updated_at: Optional[str] = None,
+) -> list[Statement]:
+    guard_column = "revision" if guard_table == "calendar_events" else "row_version"
+    checked_id = guard_id or str(event["id"])
+    checked_version = guard_version or int(event.get("revision") or 1)
+    checked_updated_at = guard_updated_at or str(event.get("updated_at") or "")
+    statements = [Statement(
+        "INSERT OR IGNORE INTO calendar_event_changes("
+        "event_id,event_revision,action,actor,source,snapshot,notify_master,mutation_key,created_at"
+        ") SELECT ?,?,?,?,?,?,?,?,? WHERE EXISTS("
+        f"SELECT 1 FROM {guard_table} WHERE id=? AND {guard_column}=? AND updated_at=?)",
+        (event["id"], int(event.get("revision") or 1), action, actor, source,
+         _json(event), 1 if notify_master else 0, mutation_key, _audit_iso(_now()),
+         checked_id, checked_version, checked_updated_at),
+    )]
     if notify_master:
-        await conn.execute(
+        statements.append(Statement(
             "INSERT OR IGNORE INTO calendar_change_receipts(change_id,consumer,state) "
-            "VALUES(?,?, 'unseen')",
-            (change_id, _CONSUMER),
-        )
+            "SELECT id,?,'unseen' FROM calendar_event_changes WHERE mutation_key=?",
+            (_CONSUMER, mutation_key),
+        ))
     if notify_kitty:
-        await conn.execute(
+        statements.append(Statement(
             "INSERT OR IGNORE INTO calendar_change_receipts(change_id,consumer,state) "
-            "VALUES(?,?, 'unseen')",
-            (change_id, _KITTY_CONSUMER),
-        )
-    return change_id
+            "SELECT id,?,'unseen' FROM calendar_event_changes WHERE mutation_key=?",
+            (_KITTY_CONSUMER, mutation_key),
+        ))
+    return statements
 
 
 async def get_event(storage, event_id: str) -> Optional[dict[str, Any]]:
     await ensure_calendar_schema(storage)
     row = await _fetchone(
-        storage._conn, "SELECT * FROM calendar_events WHERE id=?", (event_id,),
+        storage, "SELECT * FROM calendar_events WHERE id=?", (event_id,),
     )
     if row is None:
         return None
     event = _row_event(row)
     comments = await _fetchall(
-        storage._conn,
+        storage,
         "SELECT id,event_id,author,body,created_at,updated_at "
         "FROM calendar_comments WHERE event_id=? AND deleted_at IS NULL "
         "ORDER BY created_at",
@@ -409,15 +318,15 @@ async def create_event(
     }
     notify = source == "manual" and actor == "kitty"
     notify_k = source == "manual" and actor == "master"
-    async with _LOCK:
-        existing = await _fetchone(
-            storage._conn, "SELECT * FROM calendar_events WHERE id=?", (eid,),
-        )
-        if existing is not None:
-            current = _row_event(existing)
-            current["created"] = False
-            return current
-        await storage._conn.execute(
+    existing = await _fetchone(storage, "SELECT * FROM calendar_events WHERE id=?", (eid,))
+    if existing is not None:
+        current = _row_event(existing)
+        current["created"] = False
+        return current
+    mutation_key = f"event-create:{eid}"
+    try:
+        await storage.batch([
+            Statement(
             "INSERT INTO calendar_events("
             "id,title,description,starts_at,ends_at,timezone,precision,event_type,"
             "source,created_by,source_message_id,revision,status,metadata,created_at,"
@@ -429,13 +338,18 @@ async def create_event(
                 event["created_by"], event["source_message_id"], event["revision"],
                 event["status"], _json(metadata), event["created_at"],
                 event["updated_at"], event["deleted_at"],
-            ),
-        )
-        await _insert_change(
-            storage._conn, event=event, action="create", actor=actor,
+            )),
+            *_change_statements(
+            event=event, action="create", actor=actor,
             source=source, notify_master=notify, notify_kitty=notify_k,
-        )
-        await storage._conn.commit()
+            mutation_key=mutation_key,
+        )])
+    except StorageConflict:
+        current = await get_event(storage, eid)
+        if current is None:
+            raise
+        current["created"] = False
+        return current
     event["created"] = True
     return event
 
@@ -449,9 +363,9 @@ async def update_event(
     source: str = "manual",
 ) -> dict[str, Any]:
     await ensure_calendar_schema(storage)
-    async with _LOCK:
+    for _attempt in range(4):
         row = await _fetchone(
-            storage._conn,
+            storage,
             "SELECT * FROM calendar_events WHERE id=? AND status='active'",
             (event_id,),
         )
@@ -477,32 +391,34 @@ async def update_event(
             event["event_type"] = str(payload.get("event_type") or "custom")[:60]
         if isinstance(payload.get("metadata"), dict):
             event["metadata"] = payload["metadata"]
-        event["revision"] = int(event.get("revision") or 1) + 1
-        event["updated_at"] = _iso(_now())
+        previous_revision = int(event.get("revision") or 1)
+        event["revision"] = previous_revision + 1
+        event["updated_at"] = _audit_iso(_now())
         event["source"] = source
-        await storage._conn.execute(
+        # Keep the old range only in the change snapshot, never in the event row.
+        snapshot = dict(event)
+        if (event["starts_at"], event["ends_at"]) != (prev_span["starts_at"], prev_span["ends_at"]):
+            snapshot["prev_span"] = prev_span
+        mutation_key = f"event-update:{event_id}:{uuid.uuid4().hex}"
+        results = await storage.batch([Statement(
             "UPDATE calendar_events SET title=?,description=?,starts_at=?,ends_at=?,"
             "precision=?,event_type=?,source=?,revision=?,metadata=?,updated_at=? "
-            "WHERE id=?",
+            "WHERE id=? AND status='active' AND revision=?",
             (
                 event["title"], event.get("description"), event["starts_at"],
                 event["ends_at"], event["precision"], event.get("event_type"),
                 source, event["revision"], _json(event.get("metadata") or {}),
-                event["updated_at"], event_id,
+                event["updated_at"], event_id, previous_revision,
             ),
-        )
-        # 挪过日子：改之前的跨度一起写进快照，_change_days 会把新旧两边的天都点亮。
-        # 快照单独拷一份 —— prev_span 不该混进返回给调用方 / 写回表里的事件本体
-        snapshot = dict(event)
-        if (event["starts_at"], event["ends_at"]) != (prev_span["starts_at"], prev_span["ends_at"]):
-            snapshot["prev_span"] = prev_span
-        await _insert_change(
-            storage._conn, event=snapshot, action="update", actor=actor,
+        ), *_change_statements(
+            event=snapshot, action="update", actor=actor,
             source=source, notify_master=(source == "manual" and actor == "kitty"),
             notify_kitty=(source == "manual" and actor == "master"),
-        )
-        await storage._conn.commit()
-    return event
+            mutation_key=mutation_key,
+        )])
+        if results[0].changes:
+            return event
+    raise StorageConflict("event update lost a concurrent write")
 
 
 async def delete_event(
@@ -513,35 +429,38 @@ async def delete_event(
     source: str = "manual",
 ) -> dict[str, Any]:
     await ensure_calendar_schema(storage)
-    async with _LOCK:
+    for _attempt in range(4):
         row = await _fetchone(
-            storage._conn,
+            storage,
             "SELECT * FROM calendar_events WHERE id=? AND status='active'",
             (event_id,),
         )
         if row is None:
             raise ValueError("event not found")
         event = _row_event(row)
-        event["revision"] = int(event.get("revision") or 1) + 1
+        previous_revision = int(event.get("revision") or 1)
+        event["revision"] = previous_revision + 1
         event["status"] = "deleted"
-        event["deleted_at"] = _iso(_now())
+        event["deleted_at"] = _audit_iso(_now())
         event["updated_at"] = event["deleted_at"]
         event["source"] = source
-        await storage._conn.execute(
+        mutation_key = f"event-delete:{event_id}:{uuid.uuid4().hex}"
+        results = await storage.batch([Statement(
             "UPDATE calendar_events SET status='deleted',deleted_at=?,updated_at=?,"
-            "revision=?,source=? WHERE id=?",
+            "revision=?,source=? WHERE id=? AND status='active' AND revision=?",
             (
                 event["deleted_at"], event["updated_at"], event["revision"],
-                source, event_id,
+                source, event_id, previous_revision,
             ),
-        )
-        await _insert_change(
-            storage._conn, event=event, action="delete", actor=actor,
+        ), *_change_statements(
+            event=event, action="delete", actor=actor,
             source=source, notify_master=(source == "manual" and actor == "kitty"),
             notify_kitty=(source == "manual" and actor == "master"),
-        )
-        await storage._conn.commit()
-    return event
+            mutation_key=mutation_key,
+        )])
+        if results[0].changes:
+            return event
+    raise StorageConflict("event delete lost a concurrent write")
 
 
 # ============================================================
@@ -567,14 +486,14 @@ _NOTE_STEP = 116.0
 _NOTE_MAX_Y = 1042.0 - 96.0
 
 
-async def _next_free_note_y(conn, anchor: str) -> float:
+async def _next_free_note_y(storage: CalendarStorage, anchor: str) -> float:
     """master 新纸落在当天所有纸的最下面（两张纸绝不许叠）。
 
     用户自己摆过的纸都有 y 值；y 是空的老纸按前端同一套兜底（34+i×116）推算。
     取最大占位再往下一格，画布见底就贴着下限 —— 叠在底边也比压住已有的字强
     """
     rows = await _fetchall(
-        conn,
+        storage,
         "SELECT y FROM calendar_comments "
         "WHERE anchor_date=? AND deleted_at IS NULL ORDER BY created_at",
         (anchor,),
@@ -619,7 +538,7 @@ async def add_note(
     if y is None and author == "master":
         # AI 侧的纸不带坐标就自动排到当天最下面，绝不压用户摆好的纸。
         # 用户前端撕的纸永远自带 y，这条只管 master 这一路
-        y = await _next_free_note_y(storage._conn, anchor)
+        y = await _next_free_note_y(storage, anchor)
     note = {
         "id": f"cmt_{uuid.uuid4().hex[:16]}",
         "event_id": event_id,
@@ -628,20 +547,20 @@ async def add_note(
         "body": text,
         "y": float(y) if y is not None else None,
         "liked": False,
+        "row_version": 1,
         "created_at": now_iso,
         "updated_at": now_iso,
     }
-    async with _LOCK:
-        await storage._conn.execute(
+    mutation_key = f"note-create:{note['id']}"
+    await storage.batch([Statement(
             "INSERT INTO calendar_comments"
-            "(id,event_id,anchor_date,author,body,y,liked,created_at,updated_at) "
-            "VALUES(?,?,?,?,?,?,0,?,?)",
+            "(id,event_id,anchor_date,author,body,y,liked,row_version,created_at,updated_at) "
+            "VALUES(?,?,?,?,?,?,0,1,?,?)",
             (note["id"], event_id, anchor, author, text, note["y"], now_iso, now_iso),
-        )
-        await _insert_note_change(
-            storage._conn, note=note, event=event, action="comment", actor=author,
-        )
-        await storage._conn.commit()
+        ), *_note_change_statements(
+            note=note, event=event, action="comment", actor=author,
+            mutation_key=mutation_key,
+        )])
     return note
 
 
@@ -677,8 +596,9 @@ def _normalise_anchor(value: Optional[str]) -> Optional[str]:
         return None
 
 
-async def _insert_note_change(conn, *, note: dict[str, Any], event: Optional[dict[str, Any]],
-                              action: str, actor: str) -> None:
+def _note_change_statements(*, note: dict[str, Any], event: Optional[dict[str, Any]],
+                            action: str, actor: str,
+                            mutation_key: str) -> list[Statement]:
     """便签的变化记录。
 
     挂在日程上的走原来那条路（snapshot 就是事件本身 + comment），AI 侧眼前的显示一个字不变。
@@ -696,10 +616,15 @@ async def _insert_note_change(conn, *, note: dict[str, Any], event: Optional[dic
             "anchor_date": note["anchor_date"],
             "comment": note,
         }
-    await _insert_change(
-        conn, event=snapshot, action=action, actor=actor,
+    return _change_statements(
+        event=snapshot, action=action, actor=actor,
         source="manual", notify_master=(actor == "kitty"),
         notify_kitty=(actor == "master"),
+        mutation_key=mutation_key,
+        guard_table="calendar_comments",
+        guard_id=str(note["id"]),
+        guard_version=int(note.get("row_version") or 1),
+        guard_updated_at=str(note.get("updated_at") or ""),
     )
 
 
@@ -737,7 +662,7 @@ async def list_notes(
             args.append(d)
     args.append(limit)
     rows = await _fetchall(
-        storage._conn,
+        storage,
         "SELECT * FROM calendar_comments WHERE " + " AND ".join(where)
         + " ORDER BY anchor_date, created_at LIMIT ?",
         tuple(args),
@@ -748,7 +673,7 @@ async def list_notes(
 async def get_note(storage, note_id: str) -> Optional[dict[str, Any]]:
     await ensure_calendar_schema(storage)
     row = await _fetchone(
-        storage._conn, "SELECT * FROM calendar_comments WHERE id=?", (note_id,)
+        storage, "SELECT * FROM calendar_comments WHERE id=?", (note_id,)
     )
     return _note_row(row) if row else None
 
@@ -762,100 +687,94 @@ async def update_note(
 ) -> dict[str, Any]:
     """改一张便签：改字 / 挪位置 / 换绑的日程 / 点赞。只给要动的那几项。"""
     await ensure_calendar_schema(storage)
-    note = await get_note(storage, note_id)
-    if note is None or note.get("deleted_at"):
-        raise ValueError("note not found")
-    old_body = str(note.get("body") or "")
+    for _attempt in range(4):
+        note = await get_note(storage, note_id)
+        if note is None or note.get("deleted_at"):
+            raise ValueError("note not found")
+        old_body = str(note.get("body") or "")
+        old_liked = bool(note.get("liked"))
+        previous_version = int(note.get("row_version") or 1)
+        sets: list[str] = []
+        args: list[Any] = []
 
-    sets: list[str] = []
-    args: list[Any] = []
-    liked_turned_on = False
+        if "body" in payload:
+            text = " ".join(str(payload.get("body") or "").split())[:2000]
+            if not text:
+                raise ValueError("comment is required")
+            sets.append("body=?"); args.append(text); note["body"] = text
+        if "y" in payload:
+            raw = payload.get("y")
+            value = float(raw) if raw is not None else None
+            sets.append("y=?"); args.append(value); note["y"] = value
+        if "event_id" in payload:
+            event_id = payload.get("event_id") or None
+            if event_id:
+                linked = await get_event(storage, event_id)
+                if linked is None or linked.get("status") != "active":
+                    raise ValueError("event not found")
+            sets.append("event_id=?"); args.append(event_id); note["event_id"] = event_id
+        if "anchor_date" in payload:
+            anchor = _normalise_anchor(payload.get("anchor_date"))
+            if not anchor:
+                raise ValueError("invalid anchor_date")
+            sets.append("anchor_date=?"); args.append(anchor); note["anchor_date"] = anchor
+        if "liked" in payload:
+            liked = bool(payload.get("liked"))
+            sets.append("liked=?"); args.append(1 if liked else 0); note["liked"] = liked
+        if not sets:
+            return note
 
-    if "body" in payload:
-        text = " ".join(str(payload.get("body") or "").split())[:2000]
-        if not text:
-            raise ValueError("comment is required")
-        sets.append("body = ?"); args.append(text); note["body"] = text
-    if "y" in payload:
-        raw = payload.get("y")
-        val = float(raw) if raw is not None else None
-        sets.append("y = ?"); args.append(val); note["y"] = val
-    if "event_id" in payload:
-        eid = payload.get("event_id") or None
-        if eid:
-            ev = await get_event(storage, eid)
-            if ev is None or ev.get("status") != "active":
-                raise ValueError("event not found")
-        sets.append("event_id = ?"); args.append(eid); note["event_id"] = eid
-    if "anchor_date" in payload:
-        d = _normalise_anchor(payload.get("anchor_date"))
-        if not d:
-            raise ValueError("invalid anchor_date")
-        sets.append("anchor_date = ?"); args.append(d); note["anchor_date"] = d
-    want_liked: Optional[bool] = None
-    if "liked" in payload:
-        want_liked = bool(payload.get("liked"))
-        sets.append("liked = ?"); args.append(1 if want_liked else 0)
-        note["liked"] = want_liked
-
-    if not sets:
-        return note
-
-    now_iso = _iso(_now())
-    sets.append("updated_at = ?"); args.append(now_iso); note["updated_at"] = now_iso
-    args.append(note_id)
-
-    event = await get_event(storage, note["event_id"]) if note.get("event_id") else None
-    async with _LOCK:
-        # 「刚被点上心」必须在锁里现查现判：外面那次 get_note 是锁外的脏读，
-        # 两个 PATCH 同时进来会各自看到 liked=0，然后各推一条，那边连着看到两遍。
-        # 读和写在同一把锁里才是原子的；这么写「取消之后再点一次」也照样通知
-        liked_turned_on = False
-        if want_liked:
-            cur = await storage._conn.execute(
-                "SELECT liked FROM calendar_comments WHERE id=?", (note_id,)
-            )
-            row = await cur.fetchone()
-            liked_turned_on = row is not None and not bool(row[0])
-        await storage._conn.execute(
-            "UPDATE calendar_comments SET " + ", ".join(sets) + " WHERE id=?", tuple(args)
-        )
-        # 取消点赞不通知 —— 手滑点掉了不该再推一条
-        if liked_turned_on:
-            await _insert_note_change(
-                storage._conn, note=note, event=event, action="like", actor=actor,
-            )
-        # 正文真的变了才记账（挪位置 / 换绑定不算 —— 用户拖来拖去是常态，不该扰人）。
-        # 谁改了便签，对方那边就得亮。两个方向走同一条路
+        note["row_version"] = previous_version + 1
+        note["updated_at"] = _audit_iso(_now())
+        sets.extend(["row_version=?", "updated_at=?"])
+        args.extend([note["row_version"], note["updated_at"], note_id, previous_version])
+        event = await get_event(storage, note["event_id"]) if note.get("event_id") else None
+        statements = [Statement(
+            "UPDATE calendar_comments SET " + ",".join(sets)
+            + " WHERE id=? AND deleted_at IS NULL AND row_version=?",
+            tuple(args),
+        )]
+        if bool(note.get("liked")) and not old_liked:
+            statements.extend(_note_change_statements(
+                note=note, event=event, action="like", actor=actor,
+                mutation_key=f"note-like:{note_id}:{note['row_version']}",
+            ))
         if "body" in payload and str(note.get("body") or "") != old_body:
-            await _insert_note_change(
-                storage._conn, note=note, event=event, action="note_update", actor=actor,
-            )
-        await storage._conn.commit()
-    return note
+            statements.extend(_note_change_statements(
+                note=note, event=event, action="note_update", actor=actor,
+                mutation_key=f"note-body:{note_id}:{note['row_version']}",
+            ))
+        results = await storage.batch(statements)
+        if results[0].changes:
+            return note
+    raise StorageConflict("note update lost a concurrent write")
 
 
 async def delete_note(storage, note_id: str, *, actor: str) -> dict[str, Any]:
     """撕掉一张便签。软删，行还在，只是 deleted_at 有值了。
     撕掉也记账 —— 对方撕了纸，这边得亮（哪个方向都一样）"""
     await ensure_calendar_schema(storage)
-    note = await get_note(storage, note_id)
-    if note is None or note.get("deleted_at"):
-        raise ValueError("note not found")
-    event = await get_event(storage, note["event_id"]) if note.get("event_id") else None
-    now_iso = _iso(_now())
-    note["deleted_at"] = now_iso
-    note["updated_at"] = now_iso
-    async with _LOCK:
-        await storage._conn.execute(
-            "UPDATE calendar_comments SET deleted_at=?, updated_at=? WHERE id=?",
-            (now_iso, now_iso, note_id),
-        )
-        await _insert_note_change(
-            storage._conn, note=note, event=event, action="note_delete", actor=actor,
-        )
-        await storage._conn.commit()
-    return note
+    for _attempt in range(4):
+        note = await get_note(storage, note_id)
+        if note is None or note.get("deleted_at"):
+            raise ValueError("note not found")
+        event = await get_event(storage, note["event_id"]) if note.get("event_id") else None
+        previous_version = int(note.get("row_version") or 1)
+        note["row_version"] = previous_version + 1
+        note["deleted_at"] = _audit_iso(_now())
+        note["updated_at"] = note["deleted_at"]
+        results = await storage.batch([Statement(
+            "UPDATE calendar_comments SET deleted_at=?,updated_at=?,row_version=? "
+            "WHERE id=? AND deleted_at IS NULL AND row_version=?",
+            (note["deleted_at"], note["updated_at"], note["row_version"],
+             note_id, previous_version),
+        ), *_note_change_statements(
+            note=note, event=event, action="note_delete", actor=actor,
+            mutation_key=f"note-delete:{note_id}:{note['row_version']}",
+        )])
+        if results[0].changes:
+            return note
+    raise StorageConflict("note delete lost a concurrent write")
 
 
 async def list_events(
@@ -895,7 +814,7 @@ async def list_events(
         params.append(_CONSUMER)
     params.append(max(1, min(int(limit), 500)))
     rows = await _fetchall(
-        storage._conn,
+        storage,
         "SELECT e.* FROM calendar_events e WHERE " + " AND ".join(clauses)
         + " ORDER BY e.starts_at,e.updated_at LIMIT ?",
         tuple(params),
@@ -905,7 +824,7 @@ async def list_events(
 
 async def _unseen_changes(storage) -> list[dict[str, Any]]:
     rows = await _fetchall(
-        storage._conn,
+        storage,
         "SELECT c.* FROM calendar_event_changes c "
         "JOIN calendar_change_receipts r ON r.change_id=c.id "
         "WHERE r.consumer=? AND r.state='unseen' "
@@ -979,14 +898,14 @@ def _expand_span_days(starts_raw: Any, ends_raw: Any) -> list[str]:
     return days
 
 
-async def _kitty_unseen_rows(conn) -> list[tuple[int, dict[str, Any]]]:
+async def _kitty_unseen_rows(storage: CalendarStorage) -> list[tuple[int, dict[str, Any]]]:
     """用户还没看的那些变化，一条一条配上解开的 snapshot。
 
     不加 LIMIT：未读会随着用户点日子不断被销掉，涨不起来；加了反而会静默漏掉日子。
     AI 侧那条线用的 _unseen_changes 有 LIMIT 100，那是它的事，别去动它
     """
     rows = await _fetchall(
-        conn,
+        storage,
         "SELECT c.id AS change_id, c.snapshot AS snapshot FROM calendar_event_changes c "
         "JOIN calendar_change_receipts r ON r.change_id=c.id "
         "WHERE r.consumer=? AND r.state='unseen' ORDER BY c.id DESC",
@@ -1007,7 +926,7 @@ async def list_unseen_days(storage) -> list[str]:
     """AI 侧改过、用户还没点进去看的日子。前端那两个感叹号就画在这几天上"""
     await ensure_calendar_schema(storage)
     days: set[str] = set()
-    for _change_id, snapshot in await _kitty_unseen_rows(storage._conn):
+    for _change_id, snapshot in await _kitty_unseen_rows(storage):
         days.update(_change_days(snapshot))
     return sorted(days)
 
@@ -1023,22 +942,19 @@ async def mark_day_seen(storage, day: Any) -> int:
     target = _normalise_anchor(day)
     if not target:
         raise ValueError("date is required")
-    async with _LOCK:
-        hits = [
-            change_id
-            for change_id, snapshot in await _kitty_unseen_rows(storage._conn)
-            if target in _change_days(snapshot)
-        ]
-        if not hits:
-            return 0
-        placeholders = ",".join("?" for _ in hits)
-        await storage._conn.execute(
-            f"UPDATE calendar_change_receipts SET state='seen',seen_at=?,channel=? "
-            f"WHERE consumer=? AND state='unseen' AND change_id IN ({placeholders})",
-            (_iso(_now()), "kitty_app", _KITTY_CONSUMER, *hits),
-        )
-        await storage._conn.commit()
-    return len(hits)
+    hits = [
+        change_id for change_id, snapshot in await _kitty_unseen_rows(storage)
+        if target in _change_days(snapshot)
+    ]
+    if not hits:
+        return 0
+    placeholders = ",".join("?" for _ in hits)
+    results = await storage.batch([Statement(
+        f"UPDATE calendar_change_receipts SET state='seen',seen_at=?,channel=? "
+        f"WHERE consumer=? AND state='unseen' AND change_id IN ({placeholders})",
+        (_audit_iso(_now()), "kitty_app", _KITTY_CONSUMER, *hits),
+    )])
+    return results[0].changes
 
 
 def _event_dt(event: dict[str, Any], key: str) -> datetime:
@@ -1102,19 +1018,19 @@ async def complete_calendar_delivery(storage, delivery: Optional[CalendarDeliver
     if delivery is None:
         return
     await ensure_calendar_schema(storage)
-    async with _LOCK:
-        if delivery.change_ids:
-            placeholders = ",".join("?" for _ in delivery.change_ids)
-            await storage._conn.execute(
+    statements: list[Statement] = []
+    if delivery.change_ids:
+        placeholders = ",".join("?" for _ in delivery.change_ids)
+        statements.append(Statement(
                 f"UPDATE calendar_change_receipts SET state='seen',seen_at=?,channel=? "
                 f"WHERE consumer=? AND change_id IN ({placeholders})",
                 (
-                    _iso(_now()), delivery.channel, _CONSUMER,
+                    _audit_iso(_now()), delivery.channel, _CONSUMER,
                     *delivery.change_ids,
                 ),
-            )
-        if delivery.conversation_id is not None and delivery.now_signature is not None:
-            await storage._conn.execute(
+            ))
+    if delivery.conversation_id is not None and delivery.now_signature is not None:
+        statements.append(Statement(
                 "INSERT INTO calendar_consumer_state("
                 "consumer,conversation_id,last_now_signature,updated_at"
                 ") VALUES(?,?,?,?) "
@@ -1123,10 +1039,10 @@ async def complete_calendar_delivery(storage, delivery: Optional[CalendarDeliver
                 "updated_at=excluded.updated_at",
                 (
                     _CONSUMER, delivery.conversation_id,
-                    delivery.now_signature, _iso(_now()),
+                    delivery.now_signature, _audit_iso(_now()),
                 ),
-            )
-        await storage._conn.commit()
+            ))
+    await storage.batch(statements)
 
 
 # ============================================================
@@ -1295,25 +1211,24 @@ async def render_env_block(storage, *, now: Optional[datetime] = None,
 # 所以图就等于用户最后一次看到的样子；图之后 AI 侧自己动过的，文字里补一句就够
 # ============================================================
 
-_PAGES_DIR = Path(config.PAGES_DIR)
-
-
 @dataclass
 class CalendarSeeResult:
     """text + 那一页的 PNG。as_mcp_content 给 MCP 那条路出 text/image 内容块"""
 
     text: str
-    image_path: Optional[str] = None
+    image_data: Optional[bytes] = None
+
+    @property
+    def image_path(self) -> None:
+        """Deprecated compatibility shim; images now come from PageStorage."""
+        return None
 
     @property
     def log_text(self) -> str:
         return self.text
 
     def image_bytes(self) -> Optional[bytes]:
-        if not self.image_path:
-            return None
-        path = Path(self.image_path)
-        return path.read_bytes() if path.is_file() else None
+        return self.image_data
 
     def as_mcp_content(self) -> list[dict[str, Any]]:
         blocks: list[dict[str, Any]] = [{"type": "text", "text": self.text}]
@@ -1380,10 +1295,10 @@ async def _master_changes_since(storage, day: str, cutoff: datetime) -> list[str
     # master 全表改动多于 40 条时，真正属于这一天的会被静默挤掉。cutoff 之后的量级
     # 本来就小，SQL 层只留一个防跑飞的大顶，展示截断在函数末尾做
     rows = await _fetchall(
-        storage._conn,
+        storage,
         "SELECT action, snapshot, created_at FROM calendar_event_changes "
         "WHERE actor='master' AND created_at > ? ORDER BY id LIMIT 500",
-        (_iso(cutoff),),
+        (_audit_iso(cutoff),),
     )
     lines: list[str] = []
     for row in rows:
@@ -1431,26 +1346,23 @@ async def execute_calendar_see(storage, arguments: dict[str, Any]) -> CalendarSe
     weekday = "一二三四五六日"[date.fromisoformat(day).weekday()]
     lines = [f"{day} 周{weekday} · {config.USER_NAME}日历的这一页"]
 
-    page = _PAGES_DIR / f"{day}.png"
-    image_path: Optional[str] = None
+    page = None
     try:
-        if page.is_file():
-            image_path = str(page)
-            mtime = datetime.fromtimestamp(page.stat().st_mtime, tz=timezone.utc)
-            stamp = mtime.astimezone(_BJ)
+        page = await storage.pages.get(day)
+        if page is not None:
+            stamp = page.uploaded_at.astimezone(_BJ)
             today_bj = _now().astimezone(_BJ).date()
             stamp_s = (stamp.strftime("%H:%M") if stamp.date() == today_bj
                        else stamp.strftime("%m-%d %H:%M"))
             lines.append(f"页面图：{config.USER_NAME}手机 {stamp_s} 渲染的，随文附上")
-            later = await _master_changes_since(storage, day, mtime)
+            later = await _master_changes_since(storage, day, page.uploaded_at)
             if later:
                 lines.append("图之后你又动过（图上看不到）：" + "；".join(later))
         else:
             lines.append(f"页面图：这一天{config.USER_NAME}还没画过或还没传上来，只有下面的文字")
-    except OSError:
-        # is_file 和 stat 之间文件被人删了这种极端情形：降级成纯文字，别把整条流带崩
-        # （image_bytes 里自有 is_file 兜底，读不到就只出文字块）
-        image_path = None
+    except Exception:
+        logger.exception("calendar: failed to read page image for %s", day)
+        page = None
         lines.append("页面图：读取失败，这次只有文字")
 
     if events:
@@ -1462,7 +1374,10 @@ async def execute_calendar_see(storage, arguments: dict[str, Any]) -> CalendarSe
         lines.extend(_see_note_line(n, events_by_id) for n in notes)
     if not events and not notes:
         lines.append("这一天数据库里空着：没有日程也没有便签")
-    return CalendarSeeResult(text="\n".join(lines), image_path=image_path)
+    return CalendarSeeResult(
+        text="\n".join(lines),
+        image_data=page.data if page is not None else None,
+    )
 
 
 def _push_texts(action: str, event: Optional[dict[str, Any]] = None,

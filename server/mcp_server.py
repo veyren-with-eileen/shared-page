@@ -103,7 +103,7 @@ _storage: Optional[Storage] = None
 async def _get_storage() -> Storage:
     global _storage
     if _storage is None:
-        storage = Storage(config.CALENDAR_DB)
+        storage = Storage(config.CALENDAR_DB, config.PAGES_DIR)
         await storage.connect()
         _storage = storage
     return _storage

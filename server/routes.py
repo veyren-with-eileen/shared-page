@@ -8,15 +8,13 @@ token 只从环境变量 CALENDAR_TOKEN 读（config.py），启动时缺了会�
 
 from __future__ import annotations
 
-import os
 import re
-from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import (
     APIRouter, Body, Depends, File, Header, HTTPException, Query, Request, UploadFile,
 )
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
 
 import config
 from calendar_core import (
@@ -48,9 +46,10 @@ def get_storage(request: Request) -> Storage:
 
 
 async def _require_calendar_token(
+    request: Request,
     x_calendar_token: str = Header("", alias="X-Calendar-Token"),
 ) -> None:
-    expected = config.CALENDAR_TOKEN
+    expected = getattr(request.app.state, "calendar_token", None) or config.CALENDAR_TOKEN
     # 没配 token 就一律拒绝 —— 配置缺失时宁可全挡，也不能变成裸奔
     if not expected or not x_calendar_token or x_calendar_token != expected:
         raise HTTPException(status_code=401, detail="invalid calendar token")
@@ -358,7 +357,6 @@ async def calendar_unseen_seen(
 # 手机端的触发时机：退回月视图 / 切后台，且那天真的动过（dirty 标记）。
 # ============================================================
 
-_PAGES_DIR = Path(config.PAGES_DIR)
 _PAGE_DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 # 上限跟模型上游的单图限制（约 5MB）对齐着留余量：base64 还要涨三分之一，
 # 放行 8MB 会出现「传得上去、see 必炸」的稳定坏状态。实测一页几百 KB，4MB 天花板够高
@@ -366,21 +364,22 @@ _PAGE_MAX_BYTES = 4 * 1024 * 1024
 _PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 
 
-def _page_path(date: str) -> Path:
+def _validate_page_date(date: str) -> str:
     """先验日期形状再拼路径。不合形状直接 400 —— 这里的 date 会落到文件名上，
     放任意字符串过去等于让人往磁盘上写任意路径。
     必须 fullmatch：match + $ 会放过尾部一个换行（%0A），写出带换行的孤儿文件"""
     if not _PAGE_DATE_RE.fullmatch(date):
         raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD")
-    return _PAGES_DIR / f"{date}.png"
+    return date
 
 
 @router.post("/pages/{date}/render", dependencies=[Depends(_require_calendar_token)])
 async def calendar_page_upload(
+    request: Request,
     date: str,
     file: UploadFile = File(...),
 ) -> dict[str, Any]:
-    target = _page_path(date)
+    _validate_page_date(date)
     # 分块读，超限当场掐断 —— 先整只吞进内存再量大小，等于放任意大的 body 占内存
     chunks: list[bytes] = []
     size = 0
@@ -397,23 +396,21 @@ async def calendar_page_upload(
         raise HTTPException(status_code=400, detail="empty file")
     if not data.startswith(_PNG_MAGIC):
         raise HTTPException(status_code=400, detail="not a png")
-    _PAGES_DIR.mkdir(parents=True, exist_ok=True)
-    # 唯一临时名 + 原子换名：GET 永远只读到完整的一张。临时名里带随机段是因为
-    # 固定名会让并发的同日上传互相 truncate 对方写到一半的文件，后 replace 的是最终版；
-    # 写失败连自己的临时文件一起收走，磁盘满也不留孤儿
-    tmp = _PAGES_DIR / f".{date}.{os.urandom(8).hex()}.tmp"
     try:
-        tmp.write_bytes(data)
-        tmp.replace(target)
-    except OSError:
-        tmp.unlink(missing_ok=True)
+        await get_storage(request).pages.put(date, data)
+    except Exception:
         raise HTTPException(status_code=500, detail="failed to store page")
     return {"ok": True, "date": date, "size": len(data)}
 
 
 @router.get("/pages/{date}/render", dependencies=[Depends(_require_calendar_token)])
-async def calendar_page_get(date: str) -> FileResponse:
-    target = _page_path(date)
-    if not target.is_file():
+async def calendar_page_get(request: Request, date: str) -> Response:
+    _validate_page_date(date)
+    page = await get_storage(request).pages.get(date)
+    if page is None:
         raise HTTPException(status_code=404, detail="no page for this date")
-    return FileResponse(target, media_type="image/png")
+    return Response(
+        content=page.data,
+        media_type="image/png",
+        headers={"Cache-Control": "no-store"},
+    )

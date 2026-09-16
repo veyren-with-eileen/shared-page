@@ -20,7 +20,7 @@ PAGES_DIR: Path = Path(os.environ.get("CALENDAR_PAGES_DIR", "./data/pages").stri
 # ---- 时区 ----
 # 全服务一个产品时区（设计决定：这是两个人 + 一个 AI 的日历，不是多时区 SaaS）。
 # 库里存的时间戳一律 UTC ISO，所有「哪一天」的判断都换算到这个时区再算。
-CALENDAR_TZ: str = os.environ.get("CALENDAR_TZ", "Asia/Shanghai").strip() or "Asia/Shanghai"
+CALENDAR_TZ: str = os.environ.get("CALENDAR_TZ", "Asia/Taipei").strip() or "Asia/Taipei"
 
 # ---- 两边的称呼 ----
 # 一本日历两个人用，各自在对方眼里叫什么。没填就是 USER / ASSISTANT 这两个占位符，

@@ -26,7 +26,7 @@ config.require_token()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    storage = Storage(config.CALENDAR_DB)
+    storage = Storage(config.CALENDAR_DB, config.PAGES_DIR)
     await storage.connect()                        # 连库 + calendar 四张表
     await push.ensure_push_schema(storage._conn)   # push_devices（模块没开也建，空着无害）
     await seeder.seed(storage)                     # 生日/纪念日/节日（没配种子文件就是空转）
