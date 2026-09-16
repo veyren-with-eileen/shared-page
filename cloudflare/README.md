@@ -140,6 +140,9 @@ python ../tools/upload_pages_to_r2.py ../../server/data/pages
 python ../tools/upload_pages_to_r2.py ../../server/data/pages --execute
 ```
 
+The uploader invokes the Application project's installed Wrangler JavaScript
+entrypoint through Node, avoiding the Windows-only `npx.cmd` subprocess shim.
+
 Only exact `YYYY-MM-DD.png` files with PNG magic and size at most 4 MiB are
 accepted. Objects use `pages/YYYY-MM-DD.png`. Migrated objects use the R2 upload
 timestamp for stale detection; new uploads also store microsecond metadata.

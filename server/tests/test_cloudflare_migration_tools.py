@@ -84,6 +84,11 @@ class MigrationToolTests(unittest.TestCase):
         commands = upload(pages, "bucket", self.root / "wrangler.jsonc", False)
         self.assertEqual(len(commands), 1)
         self.assertIn("bucket/pages/2026-09-15.png", commands[0])
+        self.assertEqual(
+            Path(commands[0][1]).parts[-4:],
+            ("node_modules", "wrangler", "bin", "wrangler.js"),
+        )
+        self.assertNotIn("npx", commands[0][:2])
 
     def test_invalid_page_is_rejected_before_upload(self):
         pages = self.root / "pages"
