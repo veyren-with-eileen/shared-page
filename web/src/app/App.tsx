@@ -77,9 +77,12 @@ export function App() {
   }, [pageSync]);
 
   useEffect(() => {
-    document.documentElement.classList.toggle("is-month-route", route.kind === "month");
+    document.documentElement.classList.toggle(
+      "is-month-route",
+      route.kind === "month" && !editingConnection
+    );
     return () => document.documentElement.classList.remove("is-month-route");
-  }, [route.kind]);
+  }, [route.kind, editingConnection]);
 
   useEffect(() => {
     const surface = appSurfaceRef.current;
