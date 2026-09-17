@@ -1,8 +1,14 @@
 export const NOTE_TEXT_MIN_HEIGHT = 44;
 export const NOTE_TEXT_MAX_HEIGHT = 132;
+export const NOTE_BOTTOM_PADDING = 30;
+export const NOTE_LINKED_EVENT_BOTTOM_PADDING = 46;
 
 export function noteTextHeight(scrollHeight: number): number {
   return Math.min(NOTE_TEXT_MAX_HEIGHT, Math.max(NOTE_TEXT_MIN_HEIGHT, scrollHeight));
+}
+
+export function noteBottomPadding(hasLinkedEvent: boolean): number {
+  return hasLinkedEvent ? NOTE_LINKED_EVENT_BOTTOM_PADDING : NOTE_BOTTOM_PADDING;
 }
 
 export function scrollTopForVisibleItem(

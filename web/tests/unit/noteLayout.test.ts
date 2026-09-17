@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  NOTE_BOTTOM_PADDING,
+  NOTE_LINKED_EVENT_BOTTOM_PADDING,
   NOTE_TEXT_MAX_HEIGHT,
   NOTE_TEXT_MIN_HEIGHT,
+  noteBottomPadding,
   noteTextHeight,
   scrollTopForVisibleItem
 } from "../../src/notes/noteLayout";
@@ -11,6 +14,12 @@ describe("torn note layout", () => {
     expect(noteTextHeight(18)).toBe(NOTE_TEXT_MIN_HEIGHT);
     expect(noteTextHeight(84)).toBe(84);
     expect(noteTextHeight(240)).toBe(NOTE_TEXT_MAX_HEIGHT);
+  });
+
+  it("reserves the torn paper footer when a note links to an event", () => {
+    expect(noteBottomPadding(false)).toBe(NOTE_BOTTOM_PADDING);
+    expect(noteBottomPadding(true)).toBe(NOTE_LINKED_EVENT_BOTTOM_PADDING);
+    expect(NOTE_LINKED_EVENT_BOTTOM_PADDING).toBeGreaterThan(NOTE_BOTTOM_PADDING);
   });
 
   it("keeps a visible active note at the current timeline position", () => {

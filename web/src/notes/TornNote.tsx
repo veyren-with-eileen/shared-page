@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef } from "preact/hooks";
 import type { CalendarNote } from "../domain/calendar";
 import { NOTE_BODY_MAX_LENGTH } from "../domain/noteWrite";
 import { DISPLAY_NAME } from "../theme/identity";
-import { NOTE_TEXT_MAX_HEIGHT, noteTextHeight } from "./noteLayout";
+import { NOTE_TEXT_MAX_HEIGHT, noteBottomPadding, noteTextHeight } from "./noteLayout";
 import "./notes.css";
 
 interface TornNoteProps {
@@ -70,7 +70,10 @@ export function TornNote({ note, index, linkedTitle, active, dragging, offsetY, 
 
   return <article
     class={`torn-note author-${note.author} ${linkedTitle ? "has-linked-event" : ""} ${active || dragging ? "is-lifted" : ""}`}
-    style={{ transform: `translateY(${offsetY}px) rotate(${active || dragging ? 0 : index % 2 ? 1.6 : -2.2}deg)` }}
+    style={{
+      transform: `translateY(${offsetY}px) rotate(${active || dragging ? 0 : index % 2 ? 1.6 : -2.2}deg)`,
+      "--note-bottom-padding": `${noteBottomPadding(Boolean(linkedTitle))}px`
+    }}
     onClick={(event) => { if (note.author === "master" && event.detail === 2) onDoubleTap(); }}
     onPointerDown={onPointerDown}
     onPointerMove={onPointerMove}
