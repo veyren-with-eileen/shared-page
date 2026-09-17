@@ -13,6 +13,7 @@ import {
   computePageCrop,
   pageTimelineY
 } from "./pageCrop";
+import { eventVisualLayout } from "../day/eventLayout";
 import "./snapshot.css";
 
 export interface SnapshotDayState {
@@ -51,11 +52,16 @@ function eventLabel(event: DayEvent): string {
 
 function eventStyle(event: DayEvent) {
   const start = Math.max(PAGE_FIRST_HOUR * 60, event.startMinute);
-  const end = Math.min(1440, event.endMinute);
   return {
     top: `${pageTimelineY(Math.floor(start / 60), start % 60)}px`,
-    height: `${Math.max(34, (end - start) / 60 * PAGE_ROW_HEIGHT - 3)}px`
+    height: `${eventHeight(event)}px`
   };
+}
+
+function eventHeight(event: DayEvent): number {
+  const start = Math.max(PAGE_FIRST_HOUR * 60, event.startMinute);
+  const end = Math.min(1440, event.endMinute);
+  return Math.max(34, (end - start) / 60 * PAGE_ROW_HEIGHT - 3);
 }
 
 function StaticPlacedLayer({ store, items }: { store: ScrapbookStore; items: PlacedItem[] }) {
@@ -85,7 +91,7 @@ export function DayPageSnapshot({ state, scrapbook }: { state: SnapshotDayState;
     </header>
 
     {state.payload.allDay.length > 0 && <section class="snapshot-all-day-rows">
-      {state.payload.allDay.map((event) => <div class={`snapshot-all-day-event ${authorClass(event.author)}`} key={`${event.id}-${event.spanIndex ?? 0}`}>
+      {state.payload.allDay.map((event) => <div class={`snapshot-all-day-event ${authorClass(event.author)} ${event.eventType && SPECIAL_DAY_TYPES.has(event.eventType) ? "has-special-decoration" : ""}`} key={`${event.id}-${event.spanIndex ?? 0}`}>
         <strong>{event.title}</strong>
         <span>{eventLabel(event)} · {AUTHOR_LABEL[event.author]}</span>
         {event.eventType && SPECIAL_DAY_TYPES.has(event.eventType) && <img src="/assets/stamp-heart-mini.png" alt="" />}
@@ -96,9 +102,12 @@ export function DayPageSnapshot({ state, scrapbook }: { state: SnapshotDayState;
       <div class="snapshot-timeline-content" style={{ height: `${PAGE_TIMELINE_HEIGHT}px`, transform: `translateY(${-crop.top}px)` }}>
         <div class="snapshot-grid-paper" />
         {Array.from({ length: PAGE_LAST_HOUR - PAGE_FIRST_HOUR + 1 }, (_, index) => PAGE_FIRST_HOUR + index).map((hour) => <div class="snapshot-hour-row" style={{ top: `${pageTimelineY(hour)}px` }} key={hour}><span>{String(hour).padStart(2, "0")}:00</span><i /></div>)}
-        {state.payload.timed.filter((event) => event.endMinute > PAGE_FIRST_HOUR * 60 && event.startMinute < 1440).map((event) => <div class={`snapshot-timed-event ${authorClass(event.author)}`} style={eventStyle(event)} key={`${event.id}-${event.startMinute}`}>
-          <strong>{event.title}</strong><span>{eventLabel(event)} · {AUTHOR_LABEL[event.author]}</span>
-        </div>)}
+        {state.payload.timed.filter((event) => event.endMinute > PAGE_FIRST_HOUR * 60 && event.startMinute < 1440).map((event) => {
+          const layout = eventVisualLayout(eventHeight(event));
+          return <div class={`snapshot-timed-event density-${layout.density} ${authorClass(event.author)}`} style={eventStyle(event)} key={`${event.id}-${event.startMinute}`}>
+            <strong>{event.title}</strong>{layout.showMetadata && <span>{eventLabel(event)} · {AUTHOR_LABEL[event.author]}</span>}
+          </div>;
+        })}
         {state.notes.map((note, index) => {
           const linkedTitle = note.linkedEventId ? state.payload.timed.find((event) => event.id === note.linkedEventId)?.title : undefined;
           return <div class="snapshot-note-position" style={{ left: `${note.author === "master" ? 58 : 214}px`, top: `${note.y ?? 34 + index * 116}px` }} key={note.id}>

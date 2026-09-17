@@ -40,8 +40,9 @@
 }
 .snapshot-all-day-event.author-master { border-left-color: var(--ink-master); background: var(--paper-event-master); }
 .snapshot-all-day-event.author-system { border-left-color: var(--ink-system); background: var(--paper-event-auto); }
+.snapshot-all-day-event.has-special-decoration { padding-right: 64px; }
 .snapshot-all-day-event strong,
-.snapshot-timed-event strong { overflow: hidden; width: 100%; font: 400 16px/20px var(--font-hand-kitty); text-overflow: ellipsis; white-space: nowrap; }
+.snapshot-timed-event strong { overflow: hidden; width: 100%; font: 400 16px/22px var(--font-hand-author, var(--font-hand-system)); text-overflow: ellipsis; white-space: nowrap; }
 .snapshot-timed-event strong { font-size: 17px; }
 .snapshot-all-day-event span,
 .snapshot-timed-event span { color: var(--ink-kitty); font: 7px/10px var(--font-mono); letter-spacing: .4px; text-transform: uppercase; }
@@ -72,14 +73,17 @@
   box-sizing: border-box;
   flex-direction: column;
   align-items: flex-start;
-  justify-content: space-between;
-  padding: 5px 9px 6px;
+  justify-content: flex-start;
+  gap: 1px;
+  padding: 4px 9px;
   overflow: hidden;
   border-left: 2.5px solid var(--ink-kitty);
   background: var(--paper-event-kitty);
 }
 .snapshot-timed-event.author-master { border-left-color: var(--ink-master); background: var(--paper-event-master); }
 .snapshot-timed-event.author-system { border-left-color: var(--ink-system); background: var(--paper-event-auto); }
+.snapshot-timed-event.density-compact { justify-content: center; }
+.snapshot-timed-event.density-roomy { justify-content: space-between; gap: 0; padding-top: 6px; padding-bottom: 7px; }
 .snapshot-note-position { position: absolute; z-index: 7; width: 174px; height: 0; }
 .snapshot-note-position .torn-note {
   /* html-to-image can omit the live note's negative-z-index ::before layer.

@@ -18,6 +18,7 @@ import { StickerStrip } from "../scrapbook/StickerStrip";
 import { nextStickerPickerOpen } from "../scrapbook/stickerPicker";
 import { processPhoto } from "../scrapbook/imageProcessing";
 import { timelineVisibility } from "./keyboardViewport";
+import { eventVisualLayout } from "./eventLayout";
 import "./day.css";
 
 const FIRST_HOUR = 6;
@@ -58,10 +59,8 @@ function eventTimeLabel(event: DayEvent): string {
 
 function eventStyle(event: DayEvent) {
   const start = Math.max(FIRST_HOUR * 60, event.startMinute);
-  const end = Math.min(1440, event.endMinute);
   const top = 10 + ((start - FIRST_HOUR * 60) / 60) * ROW_HEIGHT;
-  const height = Math.max(34, ((end - start) / 60) * ROW_HEIGHT - 3);
-  return { top: `${top}px`, height: `${height}px` };
+  return { top: `${top}px`, height: `${eventHeight(event)}px` };
 }
 
 function eventTop(event: DayEvent): number {
@@ -368,7 +367,10 @@ export function DayPage({ store, scrapbook, dateKey, onBack, onDayChange }: DayP
         {status === "loading" && <p class="day-status">syncing…</p>}
 
         {payload.allDay.length > 0 && <section class="all-day-rows" aria-label="All-day events">
-          {payload.allDay.map((event) => <button type="button" class={`all-day-event ${authorClass(event.author)} ${store.isPending(event.id) ? "is-pending" : ""}`} key={event.id} onClick={() => openEvent(event)}><strong>{event.title}</strong><span>{eventTimeLabel(event)} · {AUTHOR_LABEL[event.author]}</span>{event.eventType && SPECIAL_DAY_TYPES.has(event.eventType) && <img src="/assets/stamp-heart-mini.png" alt="" aria-hidden="true" />}</button>)}
+          {payload.allDay.map((event) => {
+            const decorated = Boolean(event.eventType && SPECIAL_DAY_TYPES.has(event.eventType));
+            return <button type="button" class={`all-day-event ${authorClass(event.author)} ${decorated ? "has-special-decoration" : ""} ${store.isPending(event.id) ? "is-pending" : ""}`} key={event.id} onClick={() => openEvent(event)}><strong>{event.title}</strong><span>{eventTimeLabel(event)} · {AUTHOR_LABEL[event.author]}</span>{decorated && <img src="/assets/stamp-heart-mini.png" alt="" aria-hidden="true" />}</button>;
+          })}
         </section>}
 
         <section ref={timelineRef} class={draggingNoteId || placedBusy ? "day-timeline is-note-busy" : "day-timeline"} aria-label="Timeline from 06:00 to 23:00">
@@ -378,7 +380,10 @@ export function DayPage({ store, scrapbook, dateKey, onBack, onDayChange }: DayP
           }}>
             <div class="timeline-grid-paper" aria-hidden="true" />
             {Array.from({ length: LAST_HOUR - FIRST_HOUR + 1 }, (_, index) => FIRST_HOUR + index).map((hour) => <div class="hour-row" style={{ top: `${10 + (hour - FIRST_HOUR) * ROW_HEIGHT}px` }} key={hour}><span>{String(hour).padStart(2, "0")}:00</span><i /></div>)}
-            {visibleTimed.map((event) => <button type="button" class={`timed-event ${authorClass(event.author)} ${store.isPending(event.id) ? "is-pending" : ""}`} style={eventStyle(event)} key={`${event.id}-${event.startMinute}`} onClick={() => setSelectedEvent(event)}><strong>{event.title}</strong><span>{eventTimeLabel(event)} · {AUTHOR_LABEL[event.author]}</span></button>)}
+            {visibleTimed.map((event) => {
+              const layout = eventVisualLayout(eventHeight(event));
+              return <button type="button" class={`timed-event density-${layout.density} ${authorClass(event.author)} ${store.isPending(event.id) ? "is-pending" : ""}`} style={eventStyle(event)} key={`${event.id}-${event.startMinute}`} onClick={() => setSelectedEvent(event)}><strong>{event.title}</strong>{layout.showMetadata && <span>{eventTimeLabel(event)} · {AUTHOR_LABEL[event.author]}</span>}</button>;
+            })}
             {notes.map((note, index) => {
               const linkedTitle = note.linkedEventId ? payload.timed.find((event) => event.id === note.linkedEventId)?.title : undefined;
               const active = activeNoteId === note.id;

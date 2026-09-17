@@ -252,7 +252,6 @@
   top: 0;
   left: 0;
   object-fit: contain;
-  filter: drop-shadow(3px 7px 8px rgb(150 120 125 / 42%));
   pointer-events: none;
   transform-origin: center;
   backface-visibility: hidden;

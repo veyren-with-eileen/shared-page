@@ -24,8 +24,7 @@
 .torn-note.author-master { touch-action: manipulation; }
 .torn-note small { display: block; color: var(--ink-kitty); font: 7px/10px var(--font-mono); letter-spacing: .4px; opacity: .82; }
 .torn-note.author-master small { color: var(--ink-master); }
-.torn-note p, .torn-note textarea { width: 100%; min-height: 44px; max-height: 132px; margin: 8px 0 0; border: 0; outline: 0; background: transparent; color: inherit; font: 16px/22px var(--font-hand-kitty); white-space: pre-wrap; overflow-wrap: anywhere; }
-.torn-note.author-master p { font-family: var(--font-hand-master); }
+.torn-note p, .torn-note textarea { width: 100%; min-height: 44px; max-height: 132px; margin: 8px 0 0; border: 0; outline: 0; background: transparent; color: inherit; font: 16px/22px var(--font-hand-author, var(--font-hand-system)); white-space: pre-wrap; overflow-wrap: anywhere; }
 .torn-note p { overflow-y: auto; }
 .torn-note textarea { height: 44px; padding: 0; resize: none; overflow-y: hidden; user-select: text; }
 .torn-note em { position: relative; z-index: 1; display: block; min-height: 9px; overflow: hidden; margin-top: 9px; padding-top: 7px; border-top: 1px solid rgb(190 145 153 / 18%); color: var(--ink-kitty); font: normal 6.5px/9px var(--font-mono); letter-spacing: .3px; opacity: .78; text-overflow: ellipsis; white-space: nowrap; }

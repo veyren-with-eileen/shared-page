@@ -165,6 +165,10 @@
   cursor: pointer;
 }
 
+.all-day-event.has-special-decoration {
+  padding-right: 64px;
+}
+
 .all-day-event.author-master {
   border-left-color: var(--ink-master);
   background: var(--paper-event-master);
@@ -177,11 +181,12 @@
 
 .all-day-event strong,
 .timed-event strong {
+  width: 100%;
   overflow: hidden;
-  font-family: var(--font-hand-kitty);
+  font-family: var(--font-hand-author, var(--font-hand-system));
   font-size: 16px;
   font-weight: 400;
-  line-height: 20px;
+  line-height: 22px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -296,8 +301,9 @@
   width: 330px;
   flex-direction: column;
   align-items: flex-start;
-  justify-content: space-between;
-  padding: 5px 9px 6px;
+  justify-content: flex-start;
+  gap: 1px;
+  padding: 4px 9px;
   overflow: hidden;
   border: 0;
   border-left: 2.5px solid var(--ink-kitty);
@@ -318,8 +324,18 @@
 }
 
 .timed-event strong {
-  width: 100%;
   font-size: 17px;
+}
+
+.timed-event.density-compact {
+  justify-content: center;
+}
+
+.timed-event.density-roomy {
+  justify-content: space-between;
+  gap: 0;
+  padding-top: 6px;
+  padding-bottom: 7px;
 }
 
 .day-empty {
@@ -400,7 +416,7 @@
 .event-detail-sheet h2 {
   margin: 6px 0 18px;
   color: var(--ink-title);
-  font-family: var(--font-hand-kitty);
+  font-family: var(--font-hand-author, var(--font-hand-system));
   font-size: 28px;
   font-weight: 400;
   line-height: 1.2;

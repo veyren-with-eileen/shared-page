@@ -259,7 +259,7 @@
   width: 100%;
   overflow: hidden;
   color: var(--ink-kitty);
-  font-family: var(--font-hand-kitty);
+  font-family: var(--font-hand-author, var(--font-hand-system));
   font-size: 8px;
   line-height: 10px;
   text-overflow: ellipsis;
@@ -268,12 +268,10 @@
 
 .entry-title.author-master {
   color: var(--ink-master);
-  font-family: var(--font-hand-master);
 }
 
 .entry-title.author-system {
   color: var(--ink-system);
-  font-family: var(--font-hand-system);
   font-size: 5.6px;
   line-height: 7px;
 }

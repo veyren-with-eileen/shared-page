@@ -49,3 +49,16 @@
   --font-hand-master: "LXGW WenKai", cursive;
   --font-hand-system: "LXGW WenKai", cursive;
 }
+
+/* Stable domain authors select handwriting through one shared presentation token. */
+.author-kitty {
+  --font-hand-author: var(--font-hand-kitty);
+}
+
+.author-master {
+  --font-hand-author: var(--font-hand-master);
+}
+
+.author-system {
+  --font-hand-author: var(--font-hand-system);
+}
