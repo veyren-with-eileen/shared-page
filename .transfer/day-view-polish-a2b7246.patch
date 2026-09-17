@@ -1,0 +1,873 @@
+diff --git a/web/src/app/App.tsx b/web/src/app/App.tsx
+index b7c18b1..2ee5927 100644
+--- a/web/src/app/App.tsx
++++ b/web/src/app/App.tsx
+@@ -15,6 +15,7 @@ import { ScrapbookStore } from "../state/scrapbookStore";
+ import { PageSync } from "../snapshot/pageSync";
+ import { renderCalendarPage } from "../snapshot/renderPage";
+ import { ConnectionSetup } from "./ConnectionSetup";
++import { showsConnectionControl } from "./appPresentation";
+ import {
+   dayRouteUrl,
+   monthRouteUrl,
+@@ -78,11 +79,11 @@ export function App() {
+ 
+   useEffect(() => {
+     document.documentElement.classList.toggle(
+-      "is-month-route",
+-      route.kind === "month" && !editingConnection
++      "is-calendar-route",
++      !editingConnection
+     );
+-    return () => document.documentElement.classList.remove("is-month-route");
+-  }, [route.kind, editingConnection]);
++    return () => document.documentElement.classList.remove("is-calendar-route");
++  }, [editingConnection]);
+ 
+   useEffect(() => {
+     const surface = appSurfaceRef.current;
+@@ -158,24 +159,28 @@ export function App() {
+           />
+         </div>
+       ) : (
+-        <DayPage
+-          store={calendar}
+-          scrapbook={scrapbook}
+-          dateKey={route.dayKey}
+-          onBack={backToMonth}
+-          onDayChange={changeDay}
+-        />
++        <div class="day-viewport-stage">
++          <DayPage
++            store={calendar}
++            scrapbook={scrapbook}
++            dateKey={route.dayKey}
++            onBack={backToMonth}
++            onDayChange={changeDay}
++          />
++        </div>
++      )}
++      {showsConnectionControl(route.kind) && (
++        <button
++          class="connection-link"
++          type="button"
++          onClick={() => {
++            clearSessionConnection();
++            setEditingConnection(true);
++          }}
++        >
++          connection · {monthKey(route.month)}
++        </button>
+       )}
+-      <button
+-        class="connection-link"
+-        type="button"
+-        onClick={() => {
+-          clearSessionConnection();
+-          setEditingConnection(true);
+-        }}
+-      >
+-        connection · {monthKey(route.month)}
+-      </button>
+     </div>
+   );
+ }
+diff --git a/web/src/app/CanvasViewport.tsx b/web/src/app/CanvasViewport.tsx
+index 3eb1487..249e002 100644
+--- a/web/src/app/CanvasViewport.tsx
++++ b/web/src/app/CanvasViewport.tsx
+@@ -15,6 +15,10 @@ export interface CanvasViewportMetrics {
+   canvasHeight: number;
+ }
+ 
++export function availableCanvasHeight(parentHeight: number, visualViewportHeight: number, followVisualViewport: boolean): number {
++  return followVisualViewport ? Math.min(parentHeight, visualViewportHeight) : parentHeight;
++}
++
+ export function canvasViewportMetrics(
+   viewportWidth: number,
+   viewportHeight: number,
+@@ -36,13 +40,18 @@ export function canvasViewportMetrics(
+ export function CanvasViewport({ children, height = 874, fitViewportHeight = false, fitWholeViewport = false }: CanvasViewportProps) {
+   const viewportRef = useRef<HTMLDivElement>(null);
+   const measure = () => {
+-    const parentRect = fitWholeViewport
++    const fitParent = fitViewportHeight || fitWholeViewport;
++    const parentRect = fitParent
+       ? viewportRef.current?.parentElement?.getBoundingClientRect()
+       : null;
+     const parentHasSize = Boolean(parentRect && parentRect.width > 0 && parentRect.height > 0);
++    const visualViewportHeight = window.visualViewport?.height ?? window.innerHeight;
++    const availableHeight = parentHasSize
++      ? availableCanvasHeight(parentRect!.height, visualViewportHeight, fitViewportHeight)
++      : visualViewportHeight;
+     return canvasViewportMetrics(
+       parentHasSize ? parentRect!.width : window.innerWidth,
+-      parentHasSize ? parentRect!.height : window.visualViewport?.height ?? window.innerHeight,
++      availableHeight,
+       height,
+       fitViewportHeight,
+       fitWholeViewport
+diff --git a/web/src/app/app.css b/web/src/app/app.css
+index 7fe76ec..168c108 100644
+--- a/web/src/app/app.css
++++ b/web/src/app/app.css
+@@ -19,7 +19,18 @@
+   overflow: hidden;
+ }
+ 
+-.month-viewport-stage {
++.app-shell.is-day {
++  width: 100%;
++  height: 100vh;
++  height: 100dvh;
++  min-height: 0;
++  padding-top: env(safe-area-inset-top, 0px);
++  padding-bottom: env(safe-area-inset-bottom, 0px);
++  overflow: hidden;
++}
++
++.month-viewport-stage,
++.day-viewport-stage {
+   display: flex;
+   flex: 1 1 auto;
+   align-items: flex-start;
+@@ -29,6 +40,10 @@
+   overflow: hidden;
+ }
+ 
++.day-viewport-stage .canvas-viewport {
++  min-height: 0;
++}
++
+ .connection-link {
+   margin: 8px 0 24px;
+   padding: 4px 8px;
+diff --git a/web/src/app/appPresentation.ts b/web/src/app/appPresentation.ts
+new file mode 100644
+index 0000000..da77333
+--- /dev/null
++++ b/web/src/app/appPresentation.ts
+@@ -0,0 +1,5 @@
++import type { AppRoute } from "./navigation";
++
++export function showsConnectionControl(routeKind: AppRoute["kind"]): boolean {
++  return routeKind === "month";
++}
+diff --git a/web/src/day/DayPage.tsx b/web/src/day/DayPage.tsx
+index 01f591a..73a7f00 100644
+--- a/web/src/day/DayPage.tsx
++++ b/web/src/day/DayPage.tsx
+@@ -8,12 +8,14 @@ import { CanvasViewport } from "../app/CanvasViewport";
+ import { EventEditor } from "../editors/EventEditor";
+ import { SpanEditor } from "../editors/SpanEditor";
+ import { TornNote } from "../notes/TornNote";
++import { scrollTopForVisibleItem } from "../notes/noteLayout";
+ import { clampNoteY, linkedTimedEventId } from "../domain/noteWrite";
+ import { canonicalTimelinePoint } from "../domain/scrapbook";
+ import type { ScrapbookStore } from "../state/scrapbookStore";
+ import { useScrapbook } from "../state/useScrapbook";
+ import { PlacedLayer } from "../scrapbook/PlacedLayer";
+ import { StickerStrip } from "../scrapbook/StickerStrip";
++import { nextStickerPickerOpen } from "../scrapbook/stickerPicker";
+ import { processPhoto } from "../scrapbook/imageProcessing";
+ import "./day.css";
+ 
+@@ -120,6 +122,7 @@ export function DayPage({ store, scrapbook, dateKey, onBack, onDayChange }: DayP
+   const [stickerOpen, setStickerOpen] = useState(false);
+   const [photoBusy, setPhotoBusy] = useState(false);
+   const timelineRef = useRef<HTMLElement>(null);
++  const activeNotePositionRef = useRef<HTMLDivElement>(null);
+   const photoInputRef = useRef<HTMLInputElement>(null);
+   const noteGesture = useRef<{ id: string; pointerId: number; startY: number; originOffset: number; armed: boolean; timer?: number } | null>(null);
+   const today = currentProductDay() === dateKey;
+@@ -143,6 +146,42 @@ export function DayPage({ store, scrapbook, dateKey, onBack, onDayChange }: DayP
+     void store.markSeen(dateKey);
+   }, [store, dateKey]);
+ 
++  function keepActiveNoteVisible() {
++    const timeline = timelineRef.current;
++    const position = activeNotePositionRef.current;
++    const noteElement = position?.querySelector<HTMLElement>(".torn-note");
++    if (!timeline || !position || !noteElement) return;
++    timeline.scrollTop = scrollTopForVisibleItem(
++      timeline.scrollTop,
++      timeline.clientHeight,
++      timeline.scrollHeight,
++      position.offsetTop + activeNoteOffset,
++      noteElement.offsetHeight
++    );
++  }
++
++  useEffect(() => {
++    if (!activeNoteId) return;
++    const timeline = timelineRef.current;
++    if (!timeline) return;
++    let frame = 0;
++    const scheduleVisibilityCheck = () => {
++      window.cancelAnimationFrame(frame);
++      frame = window.requestAnimationFrame(keepActiveNoteVisible);
++    };
++    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleVisibilityCheck);
++    observer?.observe(timeline);
++    window.visualViewport?.addEventListener("resize", scheduleVisibilityCheck);
++    window.addEventListener("resize", scheduleVisibilityCheck);
++    scheduleVisibilityCheck();
++    return () => {
++      window.cancelAnimationFrame(frame);
++      observer?.disconnect();
++      window.visualViewport?.removeEventListener("resize", scheduleVisibilityCheck);
++      window.removeEventListener("resize", scheduleVisibilityCheck);
++    };
++  }, [activeNoteId]);
++
+   function beginEdit(event: DayEvent) {
+     const dto = store.event(event.id);
+     if (!dto || store.isPending(event.id)) return;
+@@ -179,7 +218,8 @@ export function DayPage({ store, scrapbook, dateKey, onBack, onDayChange }: DayP
+     const note = index >= 0 ? notes[index] : null;
+     if (note) {
+       if (activeNoteOffset !== 0) {
+-        const y = clampNoteY(noteBaseY(note, index) + activeNoteOffset, TIMELINE_HEIGHT);
++        const noteHeight = activeNotePositionRef.current?.querySelector<HTMLElement>(".torn-note")?.offsetHeight;
++        const y = clampNoteY(noteBaseY(note, index) + activeNoteOffset, TIMELINE_HEIGHT, noteHeight);
+         const linked = linkedTimedEventId(y + 42, visibleTimed, eventTop, eventHeight);
+         store.placeNote(note.id, y, linked);
+       }
+@@ -203,13 +243,16 @@ export function DayPage({ store, scrapbook, dateKey, onBack, onDayChange }: DayP
+     return { x: 201, y: (timeline?.scrollTop ?? 0) + (timeline?.clientHeight ?? 400) / 2 };
+   }
+ 
+-  function dropSticker(stickerId: string, clientX: number, clientY: number) {
++  async function dropSticker(stickerId: string, clientX: number, clientY: number): Promise<boolean> {
+     const timeline = timelineRef.current;
+-    if (!timeline) return;
++    if (!timeline) return false;
+     const rect = timeline.getBoundingClientRect();
+-    if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return;
++    if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return false;
+     const point = canonicalTimelinePoint({ x: clientX, y: clientY }, rect, timeline.scrollTop);
+-    if (point) void scrapbook.placeSticker(dateKey, stickerId, point);
++    if (!point) return false;
++    const placedItem = await scrapbook.placeSticker(dateKey, stickerId, point);
++    setStickerOpen((open) => nextStickerPickerOpen(open, placedItem ? "accepted-drop" : "rejected-drop"));
++    return Boolean(placedItem);
+   }
+ 
+   async function importPhoto(file?: File) {
+@@ -302,7 +345,8 @@ export function DayPage({ store, scrapbook, dateKey, onBack, onDayChange }: DayP
+             {visibleTimed.map((event) => <button type="button" class={`timed-event ${authorClass(event.author)} ${store.isPending(event.id) ? "is-pending" : ""}`} style={eventStyle(event)} key={`${event.id}-${event.startMinute}`} onClick={() => setSelectedEvent(event)}><strong>{event.title}</strong><span>{eventTimeLabel(event)} · {AUTHOR_LABEL[event.author]}</span></button>)}
+             {notes.map((note, index) => {
+               const linkedTitle = note.linkedEventId ? payload.timed.find((event) => event.id === note.linkedEventId)?.title : undefined;
+-              return <div class="note-position" style={{ left: `${note.author === "master" ? 58 : 214}px`, top: `${noteBaseY(note, index)}px` }} key={note.id}><TornNote note={note} index={index} linkedTitle={linkedTitle} active={activeNoteId === note.id} dragging={draggingNoteId === note.id} offsetY={activeNoteId === note.id ? activeNoteOffset : 0} onText={(body) => store.setNoteText(note.id, body)} onDelete={() => { setActiveNoteId(null); setActiveNoteOffset(0); void store.deleteNote(note.id); }} onDoubleTap={() => void store.toggleNoteLike(note.id)} onPointerDown={(event) => notePointerDown(note, event)} onPointerMove={notePointerMove} onPointerUp={endNotePointer} onPointerCancel={endNotePointer} /></div>;
++              const active = activeNoteId === note.id;
++              return <div ref={active ? activeNotePositionRef : undefined} class="note-position" style={{ left: `${note.author === "master" ? 58 : 214}px`, top: `${noteBaseY(note, index)}px` }} key={note.id}><TornNote note={note} index={index} linkedTitle={linkedTitle} active={active} dragging={draggingNoteId === note.id} offsetY={active ? activeNoteOffset : 0} onText={(body) => store.setNoteText(note.id, body)} onDelete={() => { setActiveNoteId(null); setActiveNoteOffset(0); void store.deleteNote(note.id); }} onDoubleTap={() => void store.toggleNoteLike(note.id)} onPointerDown={(event) => notePointerDown(note, event)} onPointerMove={notePointerMove} onPointerUp={endNotePointer} onPointerCancel={endNotePointer} onFocusRequest={keepActiveNoteVisible} /></div>;
+             })}
+             <PlacedLayer
+               store={scrapbook}
+@@ -318,6 +362,29 @@ export function DayPage({ store, scrapbook, dateKey, onBack, onDayChange }: DayP
+         </section>
+ 
+         <div class={fabOpen ? "event-fab is-open" : "event-fab"}>
++          {stickerOpen && <div
++            class="sticker-dismiss-layer"
++            role="presentation"
++            onPointerDown={(event) => {
++              event.preventDefault();
++              event.stopPropagation();
++              event.currentTarget.setPointerCapture(event.pointerId);
++            }}
++            onPointerUp={(event) => {
++              event.preventDefault();
++              event.stopPropagation();
++              setStickerOpen((open) => nextStickerPickerOpen(open, "outside-dismiss"));
++            }}
++            onPointerCancel={(event) => {
++              event.preventDefault();
++              event.stopPropagation();
++              setStickerOpen((open) => nextStickerPickerOpen(open, "outside-dismiss"));
++            }}
++            onClick={(event) => {
++              event.preventDefault();
++              event.stopPropagation();
++            }}
++          />}
+           {fabOpen && <button class="event-fab-action note-fab-action" type="button" aria-label="New note" onClick={startBlankNote}><img src="/assets/ic-note.png" alt="" aria-hidden="true" /></button>}
+           {fabOpen && <div class="event-fab-row sticker-fab-row">
+             <StickerStrip
+@@ -327,7 +394,7 @@ export function DayPage({ store, scrapbook, dateKey, onBack, onDayChange }: DayP
+               onDrop={(item, point) => dropSticker(item.id, point.x, point.y)}
+               onPickEmoji={(emoji) => void scrapbook.placeEmoji(dateKey, emoji, timelineCenter())}
+             />
+-            <button class="event-fab-action" type="button" aria-label="Stickers" aria-expanded={stickerOpen} onClick={() => setStickerOpen((open) => !open)}><img src="/assets/ic-sticker.png" alt="" aria-hidden="true" /></button>
++            <button class="event-fab-action" type="button" aria-label="Stickers" aria-expanded={stickerOpen} onClick={() => setStickerOpen((open) => nextStickerPickerOpen(open, "toggle"))}><img src="/assets/ic-sticker.png" alt="" aria-hidden="true" /></button>
+           </div>}
+           {fabOpen && <button class="event-fab-action" type="button" aria-label="Add photo" onClick={() => photoInputRef.current?.click()}>{photoBusy ? <span class="fab-progress">…</span> : <img src="/assets/ic-photo.png" alt="" aria-hidden="true" />}</button>}
+           {fabOpen && <button class="event-fab-action" type="button" aria-label="New event" onClick={() => { setEditorEvent(null); setFabOpen(false); }}><img src="/assets/ic-event.png" alt="" aria-hidden="true" /></button>}
+diff --git a/web/src/day/day.css b/web/src/day/day.css
+index 24c05a0..6d98229 100644
+--- a/web/src/day/day.css
++++ b/web/src/day/day.css
+@@ -223,12 +223,22 @@
+   overflow-x: hidden;
+   overflow-y: auto;
+   overscroll-behavior: contain;
++  touch-action: pan-y;
++  -webkit-overflow-scrolling: touch;
+   scrollbar-width: thin;
+   scrollbar-color: var(--paper-border) transparent;
+ }
+ .day-timeline.is-note-busy { overflow-y: hidden; }
+ .note-position { position: absolute; z-index: 7; width: 174px; height: 0; }
+ 
++.sticker-dismiss-layer {
++  position: fixed;
++  z-index: 1;
++  inset: 0;
++  background: transparent;
++  touch-action: none;
++}
++
+ .timeline-content {
+   position: relative;
+   width: 402px;
+@@ -330,6 +340,7 @@
+   inset: 0;
+   display: flex;
+   align-items: flex-end;
++  overflow: hidden;
+   background: rgb(92 66 73 / 18%);
+ }
+ 
+@@ -340,6 +351,8 @@
+   max-height: 76%;
+   padding: 13px 22px 24px;
+   overflow-y: auto;
++  overscroll-behavior: contain;
++  -webkit-overflow-scrolling: touch;
+   border: 1.4px solid var(--paper-border);
+   border-bottom: 0;
+   border-radius: 18px 18px 0 0;
+@@ -497,6 +510,10 @@
+   place-items: center;
+ }
+ 
++.sticker-fab-row {
++  z-index: 2;
++}
++
+ .event-fab-main span {
+   font-family: system-ui, sans-serif;
+   font-size: 30px;
+diff --git a/web/src/domain/calendarDTO.ts b/web/src/domain/calendarDTO.ts
+index 93f109e..599f3e2 100644
+--- a/web/src/domain/calendarDTO.ts
++++ b/web/src/domain/calendarDTO.ts
+@@ -21,6 +21,7 @@ import {
+   productDayRange,
+   productDaySerial
+ } from "./calendarTime";
++import { truncateNoteBody } from "./noteWrite";
+ 
+ function nullableString(value: unknown): string | null {
+   return typeof value === "string" ? value : null;
+@@ -123,7 +124,7 @@ export function materializeNotes(dtos: NoteDTO[], month: CalendarMonth): Map<num
+     const day = Number(parsed[1]);
+     if (day < 1 || day > daysInMonth(month)) continue;
+     const note: CalendarNote = {
+-      id: dto.id, author: authorFromWire(dto.author), body: dto.body.slice(0, 40),
++      id: dto.id, author: authorFromWire(dto.author), body: truncateNoteBody(dto.body),
+       timestamp: noteStamp(dto.createdAt), liked: dto.liked, linkedEventId: dto.eventId,
+       y: dto.y, anchorDate: dto.anchorDate
+     };
+diff --git a/web/src/domain/noteWrite.ts b/web/src/domain/noteWrite.ts
+index e93c3e6..929fcb6 100644
+--- a/web/src/domain/noteWrite.ts
++++ b/web/src/domain/noteWrite.ts
+@@ -3,6 +3,11 @@ import { productDateParts } from "./calendarTime";
+ 
+ export const NOTE_WIDTH = 174;
+ export const NOTE_HEIGHT = 96;
++export const NOTE_BODY_MAX_LENGTH = 2000;
++
++export function truncateNoteBody(body: string): string {
++  return body.slice(0, NOTE_BODY_MAX_LENGTH);
++}
+ 
+ export function provisionalNote(anchorDate: string, y: number): CalendarNote {
+   return { id: `local_note_${crypto.randomUUID()}`, author: "kitty", body: "", timestamp: "now", liked: false, linkedEventId: null, y, anchorDate };
+@@ -14,7 +19,7 @@ export function noteFromDTO(dto: NoteDTO): CalendarNote {
+   return {
+     id: dto.id,
+     author: dto.author === "kitty" ? "kitty" : dto.author === "master" || dto.author === "assistant" ? "master" : "system",
+-    body: dto.body.slice(0, 40),
++    body: truncateNoteBody(dto.body),
+     timestamp: p ? `${String(p.month).padStart(2, "0")}-${String(p.day).padStart(2, "0")} ${String(p.hour).padStart(2, "0")}:${String(p.minute).padStart(2, "0")}` : "now",
+     liked: dto.liked,
+     linkedEventId: dto.eventId,
+@@ -33,6 +38,6 @@ export function linkedTimedEventId(centerY: number, timed: DayEvent[], eventTop:
+   return timed.find((event) => !event.isAllDay && centerY >= eventTop(event) && centerY <= eventTop(event) + eventHeight(event))?.id ?? null;
+ }
+ 
+-export function clampNoteY(y: number, timelineHeight: number): number {
+-  return Math.min(Math.max(0, y), timelineHeight - NOTE_HEIGHT);
++export function clampNoteY(y: number, timelineHeight: number, noteHeight = NOTE_HEIGHT): number {
++  return Math.min(Math.max(0, y), Math.max(0, timelineHeight - noteHeight));
+ }
+diff --git a/web/src/editors/eventEditor.css b/web/src/editors/eventEditor.css
+index 7ea5d52..8f4ea8c 100644
+--- a/web/src/editors/eventEditor.css
++++ b/web/src/editors/eventEditor.css
+@@ -4,18 +4,23 @@
+   inset: 0;
+   display: flex;
+   align-items: flex-end;
++  overflow: hidden;
+   background: rgb(92 66 73 / 18%);
+ }
+ 
+ .event-editor-sheet {
+   width: 100%;
+   min-height: 348px;
++  max-height: 100%;
+   padding: 10px 24px 14px;
+   border: 1.4px solid var(--paper-border);
+   border-bottom: 0;
+   border-radius: 18px 18px 0 0;
+   background: #fff;
+   box-shadow: 0 -4px 0 rgb(214 160 166 / 16%);
++  overflow-y: auto;
++  overscroll-behavior: contain;
++  -webkit-overflow-scrolling: touch;
+ }
+ 
+ .editor-handle {
+diff --git a/web/src/editors/spanEditor.css b/web/src/editors/spanEditor.css
+index cd40ec3..9256337 100644
+--- a/web/src/editors/spanEditor.css
++++ b/web/src/editors/spanEditor.css
+@@ -4,18 +4,23 @@
+   inset: 0;
+   display: flex;
+   align-items: flex-end;
++  overflow: hidden;
+   background: rgb(92 66 73 / 18%);
+ }
+ 
+ .span-editor-sheet {
+   width: 100%;
+   min-height: 188px;
++  max-height: 100%;
+   padding: 10px 24px 14px;
+   border: 1.4px solid var(--paper-border);
+   border-bottom: 0;
+   border-radius: 18px 18px 0 0;
+   background: #fff;
+   box-shadow: 0 -4px 0 rgb(214 160 166 / 16%);
++  overflow-y: auto;
++  overscroll-behavior: contain;
++  -webkit-overflow-scrolling: touch;
+ }
+ 
+ .span-editor-sheet.is-editing { min-height: 246px; }
+diff --git a/web/src/notes/TornNote.tsx b/web/src/notes/TornNote.tsx
+index f6f59fb..c03f197 100644
+--- a/web/src/notes/TornNote.tsx
++++ b/web/src/notes/TornNote.tsx
+@@ -1,4 +1,8 @@
++import { useLayoutEffect, useRef } from "preact/hooks";
+ import type { CalendarNote } from "../domain/calendar";
++import { NOTE_BODY_MAX_LENGTH } from "../domain/noteWrite";
++import { DISPLAY_NAME } from "../theme/identity";
++import { NOTE_TEXT_MAX_HEIGHT, noteTextHeight } from "./noteLayout";
+ import "./notes.css";
+ 
+ interface TornNoteProps {
+@@ -15,9 +19,33 @@ interface TornNoteProps {
+   onPointerMove(event: PointerEvent): void;
+   onPointerUp(event: PointerEvent): void;
+   onPointerCancel(event: PointerEvent): void;
++  onFocusRequest(): void;
+ }
+ 
+-export function TornNote({ note, index, linkedTitle, active, dragging, offsetY, onText, onDelete, onDoubleTap, onPointerDown, onPointerMove, onPointerUp, onPointerCancel }: TornNoteProps) {
++export function TornNote({ note, index, linkedTitle, active, dragging, offsetY, onText, onDelete, onDoubleTap, onPointerDown, onPointerMove, onPointerUp, onPointerCancel, onFocusRequest }: TornNoteProps) {
++  const textareaRef = useRef<HTMLTextAreaElement>(null);
++
++  function resizeTextarea(textarea: HTMLTextAreaElement) {
++    textarea.style.height = "0px";
++    textarea.style.height = `${noteTextHeight(textarea.scrollHeight)}px`;
++    textarea.style.overflowY = textarea.scrollHeight > NOTE_TEXT_MAX_HEIGHT ? "auto" : "hidden";
++  }
++
++  useLayoutEffect(() => {
++    const textarea = textareaRef.current;
++    if (active && textarea) {
++      resizeTextarea(textarea);
++      onFocusRequest();
++    }
++  }, [active, note.body]);
++
++  useLayoutEffect(() => {
++    const textarea = textareaRef.current;
++    if (!active || !textarea) return;
++    textarea.focus({ preventScroll: true });
++    onFocusRequest();
++  }, [active]);
++
+   return <article
+     class={`torn-note author-${note.author} ${active || dragging ? "is-lifted" : ""}`}
+     style={{ transform: `translateY(${offsetY}px) rotate(${active || dragging ? 0 : index % 2 ? 1.6 : -2.2}deg)` }}
+@@ -28,9 +56,19 @@ export function TornNote({ note, index, linkedTitle, active, dragging, offsetY,
+     onPointerCancel={onPointerCancel}
+   >
+     <span class="note-tape" aria-hidden="true" />
+-    <small>{note.author === "master" ? "ASSISTANT" : note.author === "kitty" ? "USER" : "AUTO"} · {note.timestamp}</small>
++    <small>{DISPLAY_NAME[note.author]} · {note.timestamp}</small>
+     {active && note.author === "kitty"
+-      ? <textarea autoFocus value={note.body} maxLength={40} aria-label="Note text" onInput={(event) => onText(event.currentTarget.value)} />
++      ? <textarea
++          ref={textareaRef}
++          value={note.body}
++          maxLength={NOTE_BODY_MAX_LENGTH}
++          aria-label="Note text"
++          onFocus={onFocusRequest}
++          onInput={(event) => {
++            resizeTextarea(event.currentTarget);
++            onText(event.currentTarget.value);
++          }}
++        />
+       : <p>{note.body || " "}</p>}
+     {linkedTitle && <em>↳ {linkedTitle}</em>}
+     {note.liked && <span class="note-heart" aria-label="Liked">♡</span>}
+diff --git a/web/src/notes/noteLayout.ts b/web/src/notes/noteLayout.ts
+new file mode 100644
+index 0000000..72c70b0
+--- /dev/null
++++ b/web/src/notes/noteLayout.ts
+@@ -0,0 +1,23 @@
++export const NOTE_TEXT_MIN_HEIGHT = 42;
++export const NOTE_TEXT_MAX_HEIGHT = 126;
++
++export function noteTextHeight(scrollHeight: number): number {
++  return Math.min(NOTE_TEXT_MAX_HEIGHT, Math.max(NOTE_TEXT_MIN_HEIGHT, scrollHeight));
++}
++
++export function scrollTopForVisibleItem(
++  currentScrollTop: number,
++  viewportHeight: number,
++  scrollHeight: number,
++  itemTop: number,
++  itemHeight: number,
++  inset = 12
++): number {
++  let next = currentScrollTop;
++  if (itemTop < currentScrollTop + inset) {
++    next = itemTop - inset;
++  } else if (itemTop + itemHeight > currentScrollTop + viewportHeight - inset) {
++    next = itemTop + itemHeight - viewportHeight + inset;
++  }
++  return Math.min(Math.max(0, next), Math.max(0, scrollHeight - viewportHeight));
++}
+diff --git a/web/src/notes/notes.css b/web/src/notes/notes.css
+index efcfee8..6766b3f 100644
+--- a/web/src/notes/notes.css
++++ b/web/src/notes/notes.css
+@@ -4,7 +4,7 @@
+   isolation: isolate;
+   width: 174px;
+   min-height: 88px;
+-  padding: 14px 15px 24px;
++  padding: 19px 15px 28px;
+   background: transparent;
+   color: var(--ink-note-kitty);
+   filter: drop-shadow(1.5px 2px 2.5px rgb(150 120 125 / 30%));
+@@ -22,12 +22,13 @@
+ .torn-note.is-lifted { z-index: 20; filter: drop-shadow(3px 7px 8px rgb(150 120 125 / 42%)); scale: 1.05; touch-action: none; }
+ .torn-note.author-master { color: var(--ink-note-master); }
+ .torn-note.author-master { touch-action: manipulation; }
+-.torn-note small { display: block; color: var(--ink-kitty); font: 7px var(--font-mono); letter-spacing: .4px; }
++.torn-note small { display: block; color: var(--ink-kitty); font: 7px/10px var(--font-mono); letter-spacing: .4px; }
+ .torn-note.author-master small { color: var(--ink-master); }
+-.torn-note p, .torn-note textarea { width: 100%; min-height: 42px; margin: 3px 0 0; border: 0; outline: 0; background: transparent; color: inherit; font: 16px/21px var(--font-hand-kitty); white-space: pre-wrap; }
++.torn-note p, .torn-note textarea { width: 100%; min-height: 42px; max-height: 126px; margin: 5px 0 0; border: 0; outline: 0; background: transparent; color: inherit; font: 16px/21px var(--font-hand-kitty); white-space: pre-wrap; overflow-wrap: anywhere; }
+ .torn-note.author-master p { font-family: var(--font-hand-master); }
+-.torn-note textarea { height: 46px; padding: 0; resize: none; overflow: hidden; user-select: text; }
+-.torn-note em { display: block; overflow: hidden; margin-top: 1px; color: var(--ink-kitty); font: normal 6.5px var(--font-mono); letter-spacing: .3px; text-overflow: ellipsis; white-space: nowrap; }
++.torn-note p { overflow-y: auto; }
++.torn-note textarea { height: 42px; padding: 0; resize: none; overflow-y: hidden; user-select: text; }
++.torn-note em { display: block; overflow: hidden; margin-top: 5px; color: var(--ink-kitty); font: normal 6.5px/9px var(--font-mono); letter-spacing: .3px; text-overflow: ellipsis; white-space: nowrap; }
+ .torn-note.author-master em { color: var(--ink-master); }
+ .note-tape { position: absolute; top: -11px; left: 61px; width: 52px; height: 25px; background: url("/assets/gingham-tape-short.png") center / 100% 100% no-repeat; transform: rotate(6deg); }
+ .author-master .note-tape { left: -14px; filter: hue-rotate(183deg) saturate(.78) brightness(1.04); transform: rotate(-19deg); }
+diff --git a/web/src/scrapbook/StickerStrip.tsx b/web/src/scrapbook/StickerStrip.tsx
+index b46ba42..ddf0575 100644
+--- a/web/src/scrapbook/StickerStrip.tsx
++++ b/web/src/scrapbook/StickerStrip.tsx
+@@ -13,7 +13,7 @@ interface StickerStripProps {
+   store: ScrapbookStore;
+   stickers: StickerLibraryItem[];
+   open: boolean;
+-  onDrop(item: StickerLibraryItem, client: Point): void;
++  onDrop(item: StickerLibraryItem, client: Point): void | Promise<boolean>;
+   onPickEmoji(emoji: string): void;
+ }
+ 
+@@ -115,18 +115,18 @@ export function StickerStrip({ store, stickers, open, onDrop, onPickEmoji }: Sti
+     }
+   }
+ 
+-  function pointerEnd(event: PointerEvent) {
++  function pointerEnd(event: PointerEvent, cancelled = false) {
+     const state = drag.current;
+     if (!state || state.pointerId !== event.pointerId) return;
+     if (state.deleteTimer) window.clearTimeout(state.deleteTimer);
+     drag.current = null;
+-    if (state.intent === "lift") {
++    if (!cancelled && state.intent === "lift") {
+       const rect = stripRef.current?.getBoundingClientRect();
+       const inside = rect && pointInRect(
+         { x: event.clientX, y: event.clientY },
+         { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
+       );
+-      if (!inside) onDrop(state.item, { x: event.clientX, y: event.clientY });
++      if (!inside) void onDrop(state.item, { x: event.clientX, y: event.clientY });
+     }
+     setLifted(null);
+   }
+@@ -156,7 +156,8 @@ export function StickerStrip({ store, stickers, open, onDrop, onPickEmoji }: Sti
+               onPointerDown={(event) => pointerDown(item, event)}
+               onPointerMove={pointerMove}
+               onPointerUp={pointerEnd}
+-              onPointerCancel={pointerEnd}
++              onPointerCancel={(event) => pointerEnd(event, true)}
++              onLostPointerCapture={(event) => pointerEnd(event, true)}
+               onContextMenu={(event) => event.preventDefault()}
+             />
+             {markedId === item.id && !item.builtIn && <button class="custom-sticker-delete" type="button" aria-label="Delete custom sticker" onClick={() => { setMarkedId(null); void store.removeCustomSticker(item.id); }}>×</button>}
+diff --git a/web/src/scrapbook/stickerPicker.ts b/web/src/scrapbook/stickerPicker.ts
+new file mode 100644
+index 0000000..18214c5
+--- /dev/null
++++ b/web/src/scrapbook/stickerPicker.ts
+@@ -0,0 +1,19 @@
++export type StickerPickerAction =
++  | "toggle"
++  | "outside-dismiss"
++  | "accepted-drop"
++  | "rejected-drop"
++  | "cancelled-drag";
++
++export function nextStickerPickerOpen(open: boolean, action: StickerPickerAction): boolean {
++  switch (action) {
++    case "toggle":
++      return !open;
++    case "outside-dismiss":
++    case "accepted-drop":
++      return false;
++    case "rejected-drop":
++    case "cancelled-drag":
++      return open;
++  }
++}
+diff --git a/web/src/snapshot/DayPageSnapshot.tsx b/web/src/snapshot/DayPageSnapshot.tsx
+index ad6dfc8..6401a87 100644
+--- a/web/src/snapshot/DayPageSnapshot.tsx
++++ b/web/src/snapshot/DayPageSnapshot.tsx
+@@ -102,7 +102,7 @@ export function DayPageSnapshot({ state, scrapbook }: { state: SnapshotDayState;
+         {state.notes.map((note, index) => {
+           const linkedTitle = note.linkedEventId ? state.payload.timed.find((event) => event.id === note.linkedEventId)?.title : undefined;
+           return <div class="snapshot-note-position" style={{ left: `${note.author === "master" ? 58 : 214}px`, top: `${note.y ?? 34 + index * 116}px` }} key={note.id}>
+-            <TornNote note={note} index={index} linkedTitle={linkedTitle} active={false} dragging={false} offsetY={0} onText={() => undefined} onDelete={() => undefined} onDoubleTap={() => undefined} onPointerDown={() => undefined} onPointerMove={() => undefined} onPointerUp={() => undefined} onPointerCancel={() => undefined} />
++            <TornNote note={note} index={index} linkedTitle={linkedTitle} active={false} dragging={false} offsetY={0} onText={() => undefined} onDelete={() => undefined} onDoubleTap={() => undefined} onPointerDown={() => undefined} onPointerMove={() => undefined} onPointerUp={() => undefined} onPointerCancel={() => undefined} onFocusRequest={() => undefined} />
+           </div>;
+         })}
+         <StaticPlacedLayer store={scrapbook} items={state.placed} />
+diff --git a/web/src/state/calendarStore.ts b/web/src/state/calendarStore.ts
+index aad8470..1cd964f 100644
+--- a/web/src/state/calendarStore.ts
++++ b/web/src/state/calendarStore.ts
+@@ -11,7 +11,7 @@ import {
+   spanCreatePayload,
+   spanPatchPayload
+ } from "../domain/spanWrite";
+-import { createNotePayload, noteFromDTO, provisionalNote } from "../domain/noteWrite";
++import { createNotePayload, noteFromDTO, provisionalNote, truncateNoteBody } from "../domain/noteWrite";
+ import { materializeDay } from "../domain/calendarDTO";
+ import { NOOP_PAGE_DIRTY, eventRenderedDayKeys, markEventTransition, type PageDirtySink } from "../snapshot/pageDirty";
+ 
+@@ -596,7 +596,7 @@ export class CalendarStore {
+   setNoteText(id: string, body: string) {
+     const before = this.note(id);
+     if (!before || before.author !== "kitty") return;
+-    const updated = { ...before, body: body.slice(0, 40) };
++    const updated = { ...before, body: truncateNoteBody(body) };
+     this.replaceNote(id, updated);
+     const oldTimer = this.noteTextTimers.get(id);
+     if (oldTimer !== undefined) globalThis.clearTimeout(oldTimer);
+diff --git a/web/src/styles/global.css b/web/src/styles/global.css
+index 52bf635..845f70d 100644
+--- a/web/src/styles/global.css
++++ b/web/src/styles/global.css
+@@ -12,11 +12,13 @@ body,
+   margin: 0;
+ }
+ 
+-html.is-month-route,
+-html.is-month-route body,
+-html.is-month-route #app {
++html.is-calendar-route,
++html.is-calendar-route body,
++html.is-calendar-route #app {
+   height: 100%;
++  min-height: 0;
+   overflow: hidden;
++  overscroll-behavior: none;
+ }
+ 
+ body {
+diff --git a/web/tests/unit/appPresentation.test.ts b/web/tests/unit/appPresentation.test.ts
+new file mode 100644
+index 0000000..df751ec
+--- /dev/null
++++ b/web/tests/unit/appPresentation.test.ts
+@@ -0,0 +1,9 @@
++import { describe, expect, it } from "vitest";
++import { showsConnectionControl } from "../../src/app/appPresentation";
++
++describe("app route presentation", () => {
++  it("keeps connection settings on Month View and out of Day View flow", () => {
++    expect(showsConnectionControl("month")).toBe(true);
++    expect(showsConnectionControl("day")).toBe(false);
++  });
++});
+diff --git a/web/tests/unit/canvasViewport.test.ts b/web/tests/unit/canvasViewport.test.ts
+index 3ba0ed4..9cdfccc 100644
+--- a/web/tests/unit/canvasViewport.test.ts
++++ b/web/tests/unit/canvasViewport.test.ts
+@@ -1,5 +1,5 @@
+ import { describe, expect, it } from "vitest";
+-import { canvasViewportMetrics } from "../../src/app/CanvasViewport";
++import { availableCanvasHeight, canvasViewportMetrics } from "../../src/app/CanvasViewport";
+ 
+ describe("canvas viewport metrics", () => {
+   it("keeps the canonical canvas on a roomy desktop", () => {
+@@ -13,6 +13,22 @@ describe("canvas viewport metrics", () => {
+     expect(metrics.canvasHeight * metrics.scale).toBeCloseTo(667);
+   });
+ 
++  it("fits Day View to its safe-area-adjusted stage rather than raw viewport height", () => {
++    const rawViewportHeight = 852;
++    const safeAreaAdjustedHeight = 793;
++    const metrics = canvasViewportMetrics(390, safeAreaAdjustedHeight, 874, true);
++
++    expect(metrics.scale).toBeCloseTo(390 / 402);
++    expect(metrics.canvasHeight * metrics.scale).toBeCloseTo(safeAreaAdjustedHeight);
++    expect(metrics.canvasHeight * metrics.scale).toBeLessThan(rawViewportHeight);
++  });
++
++  it("lets the visual viewport shrink Day View for the iOS keyboard without double-counting safe area", () => {
++    expect(availableCanvasHeight(793, 852, true)).toBe(793);
++    expect(availableCanvasHeight(793, 496, true)).toBe(496);
++    expect(availableCanvasHeight(793, 496, false)).toBe(793);
++  });
++
+   it("does not shorten fixed-height Month View canvases", () => {
+     const metrics = canvasViewportMetrics(375, 667, 874, false);
+ 
+diff --git a/web/tests/unit/noteDTO.test.ts b/web/tests/unit/noteDTO.test.ts
+index a3986ac..c0de6ed 100644
+--- a/web/tests/unit/noteDTO.test.ts
++++ b/web/tests/unit/noteDTO.test.ts
+@@ -25,4 +25,9 @@ describe("note DTO materialization", () => {
+     const result = materializeNotes(parseNoteList({ notes: [note({ id: "low", y: 200 }), note({ id: "high", y: 40 })] }), september);
+     expect(result.get(15)?.map((n) => n.id)).toEqual(["high", "low"]);
+   });
++  it("preserves note text beyond the old 40-character presentation limit", () => {
++    const body = "long note ".repeat(12);
++    const result = materializeNotes(parseNoteList({ notes: [note({ body })] }), september);
++    expect(result.get(15)?.[0].body).toBe(body);
++  });
+ });
+diff --git a/web/tests/unit/noteLayout.test.ts b/web/tests/unit/noteLayout.test.ts
+new file mode 100644
+index 0000000..c893c5c
+--- /dev/null
++++ b/web/tests/unit/noteLayout.test.ts
+@@ -0,0 +1,29 @@
++import { describe, expect, it } from "vitest";
++import {
++  NOTE_TEXT_MAX_HEIGHT,
++  NOTE_TEXT_MIN_HEIGHT,
++  noteTextHeight,
++  scrollTopForVisibleItem
++} from "../../src/notes/noteLayout";
++
++describe("torn note layout", () => {
++  it("grows with content between the readable minimum and maximum", () => {
++    expect(noteTextHeight(18)).toBe(NOTE_TEXT_MIN_HEIGHT);
++    expect(noteTextHeight(84)).toBe(84);
++    expect(noteTextHeight(240)).toBe(NOTE_TEXT_MAX_HEIGHT);
++  });
++
++  it("keeps a visible active note at the current timeline position", () => {
++    expect(scrollTopForVisibleItem(200, 400, 1042, 280, 120)).toBe(200);
++  });
++
++  it("moves only the timeline enough to reveal a note above or below", () => {
++    expect(scrollTopForVisibleItem(200, 400, 1042, 170, 100)).toBe(158);
++    expect(scrollTopForVisibleItem(200, 400, 1042, 540, 100)).toBe(252);
++  });
++
++  it("clamps keyboard visibility scrolling to the timeline range", () => {
++    expect(scrollTopForVisibleItem(0, 400, 1042, -30, 100)).toBe(0);
++    expect(scrollTopForVisibleItem(600, 400, 1042, 990, 120)).toBe(642);
++  });
++});
+diff --git a/web/tests/unit/noteWrite.test.ts b/web/tests/unit/noteWrite.test.ts
+index 822ebe3..e76fe62 100644
+--- a/web/tests/unit/noteWrite.test.ts
++++ b/web/tests/unit/noteWrite.test.ts
+@@ -1,6 +1,6 @@
+ import { describe, expect, it } from "vitest";
+ import type { CalendarNote, DayEvent } from "../../src/domain/calendar";
+-import { clampNoteY, createNotePayload, linkedTimedEventId } from "../../src/domain/noteWrite";
++import { NOTE_BODY_MAX_LENGTH, clampNoteY, createNotePayload, linkedTimedEventId, truncateNoteBody } from "../../src/domain/noteWrite";
+ 
+ const note: CalendarNote = { id: "local_1", author: "kitty", body: " note ", timestamp: "now", liked: false, linkedEventId: null, y: 120, anchorDate: "2026-09-15" };
+ const timed: DayEvent = { id: "cal_1", author: "kitty", title: "lunch", description: null, eventType: null, isAllDay: false, isSpan: false, originalStartsAt: "", originalEndsAt: "", startMinute: 600, endMinute: 660, continuesBefore: false, continuesAfter: false, spanIndex: null, spanLength: null, revision: 1 };
+@@ -18,5 +18,9 @@ describe("note write and placement", () => {
+   it("clamps placement inside the timeline", () => {
+     expect(clampNoteY(-10, 1000)).toBe(0);
+     expect(clampNoteY(990, 1000)).toBe(904);
++    expect(clampNoteY(990, 1000, 180)).toBe(820);
++  });
++  it("matches the existing 2000-character backend note limit", () => {
++    expect(truncateNoteBody("x".repeat(NOTE_BODY_MAX_LENGTH + 20))).toHaveLength(NOTE_BODY_MAX_LENGTH);
+   });
+ });
+diff --git a/web/tests/unit/stickerPicker.test.ts b/web/tests/unit/stickerPicker.test.ts
+new file mode 100644
+index 0000000..8b99bfa
+--- /dev/null
++++ b/web/tests/unit/stickerPicker.test.ts
+@@ -0,0 +1,19 @@
++import { describe, expect, it } from "vitest";
++import { nextStickerPickerOpen } from "../../src/scrapbook/stickerPicker";
++
++describe("sticker picker lifecycle", () => {
++  it("toggles open and closed from the sticker button", () => {
++    expect(nextStickerPickerOpen(false, "toggle")).toBe(true);
++    expect(nextStickerPickerOpen(true, "toggle")).toBe(false);
++  });
++
++  it("closes only for an outside dismissal or an accepted drop", () => {
++    expect(nextStickerPickerOpen(true, "outside-dismiss")).toBe(false);
++    expect(nextStickerPickerOpen(true, "accepted-drop")).toBe(false);
++  });
++
++  it("stays open after a rejected or cancelled drag", () => {
++    expect(nextStickerPickerOpen(true, "rejected-drop")).toBe(true);
++    expect(nextStickerPickerOpen(true, "cancelled-drag")).toBe(true);
++  });
++});
