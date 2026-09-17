@@ -15,6 +15,7 @@ import { ScrapbookStore } from "../state/scrapbookStore";
 import { PageSync } from "../snapshot/pageSync";
 import { renderCalendarPage } from "../snapshot/renderPage";
 import { ConnectionSetup } from "./ConnectionSetup";
+import { showsConnectionControl } from "./appPresentation";
 import {
   dayRouteUrl,
   monthRouteUrl,
@@ -78,11 +79,11 @@ export function App() {
 
   useEffect(() => {
     document.documentElement.classList.toggle(
-      "is-month-route",
-      route.kind === "month" && !editingConnection
+      "is-calendar-route",
+      !editingConnection
     );
-    return () => document.documentElement.classList.remove("is-month-route");
-  }, [route.kind, editingConnection]);
+    return () => document.documentElement.classList.remove("is-calendar-route");
+  }, [editingConnection]);
 
   useEffect(() => {
     const surface = appSurfaceRef.current;
@@ -158,24 +159,28 @@ export function App() {
           />
         </div>
       ) : (
-        <DayPage
-          store={calendar}
-          scrapbook={scrapbook}
-          dateKey={route.dayKey}
-          onBack={backToMonth}
-          onDayChange={changeDay}
-        />
+        <div class="day-viewport-stage">
+          <DayPage
+            store={calendar}
+            scrapbook={scrapbook}
+            dateKey={route.dayKey}
+            onBack={backToMonth}
+            onDayChange={changeDay}
+          />
+        </div>
       )}
-      <button
-        class="connection-link"
-        type="button"
-        onClick={() => {
-          clearSessionConnection();
-          setEditingConnection(true);
-        }}
-      >
-        connection · {monthKey(route.month)}
-      </button>
+      {showsConnectionControl(route.kind) && (
+        <button
+          class="connection-link"
+          type="button"
+          onClick={() => {
+            clearSessionConnection();
+            setEditingConnection(true);
+          }}
+        >
+          connection · {monthKey(route.month)}
+        </button>
+      )}
     </div>
   );
 }

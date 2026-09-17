@@ -223,11 +223,21 @@
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
   scrollbar-color: var(--paper-border) transparent;
 }
 .day-timeline.is-note-busy { overflow-y: hidden; }
 .note-position { position: absolute; z-index: 7; width: 174px; height: 0; }
+
+.sticker-dismiss-layer {
+  position: fixed;
+  z-index: 1;
+  inset: 0;
+  background: transparent;
+  touch-action: none;
+}
 
 .timeline-content {
   position: relative;
@@ -330,6 +340,7 @@
   inset: 0;
   display: flex;
   align-items: flex-end;
+  overflow: hidden;
   background: rgb(92 66 73 / 18%);
 }
 
@@ -340,6 +351,8 @@
   max-height: 76%;
   padding: 13px 22px 24px;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   border: 1.4px solid var(--paper-border);
   border-bottom: 0;
   border-radius: 18px 18px 0 0;
@@ -495,6 +508,10 @@
   width: 50px;
   height: 50px;
   place-items: center;
+}
+
+.sticker-fab-row {
+  z-index: 2;
 }
 
 .event-fab-main span {

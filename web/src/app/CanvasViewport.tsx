@@ -15,6 +15,10 @@ export interface CanvasViewportMetrics {
   canvasHeight: number;
 }
 
+export function availableCanvasHeight(parentHeight: number, visualViewportHeight: number, followVisualViewport: boolean): number {
+  return followVisualViewport ? Math.min(parentHeight, visualViewportHeight) : parentHeight;
+}
+
 export function canvasViewportMetrics(
   viewportWidth: number,
   viewportHeight: number,
@@ -36,13 +40,18 @@ export function canvasViewportMetrics(
 export function CanvasViewport({ children, height = 874, fitViewportHeight = false, fitWholeViewport = false }: CanvasViewportProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const measure = () => {
-    const parentRect = fitWholeViewport
+    const fitParent = fitViewportHeight || fitWholeViewport;
+    const parentRect = fitParent
       ? viewportRef.current?.parentElement?.getBoundingClientRect()
       : null;
     const parentHasSize = Boolean(parentRect && parentRect.width > 0 && parentRect.height > 0);
+    const visualViewportHeight = window.visualViewport?.height ?? window.innerHeight;
+    const availableHeight = parentHasSize
+      ? availableCanvasHeight(parentRect!.height, visualViewportHeight, fitViewportHeight)
+      : visualViewportHeight;
     return canvasViewportMetrics(
       parentHasSize ? parentRect!.width : window.innerWidth,
-      parentHasSize ? parentRect!.height : window.visualViewport?.height ?? window.innerHeight,
+      availableHeight,
       height,
       fitViewportHeight,
       fitWholeViewport

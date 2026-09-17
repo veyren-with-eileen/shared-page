@@ -13,7 +13,7 @@ interface StickerStripProps {
   store: ScrapbookStore;
   stickers: StickerLibraryItem[];
   open: boolean;
-  onDrop(item: StickerLibraryItem, client: Point): void;
+  onDrop(item: StickerLibraryItem, client: Point): void | Promise<boolean>;
   onPickEmoji(emoji: string): void;
 }
 
@@ -115,18 +115,18 @@ export function StickerStrip({ store, stickers, open, onDrop, onPickEmoji }: Sti
     }
   }
 
-  function pointerEnd(event: PointerEvent) {
+  function pointerEnd(event: PointerEvent, cancelled = false) {
     const state = drag.current;
     if (!state || state.pointerId !== event.pointerId) return;
     if (state.deleteTimer) window.clearTimeout(state.deleteTimer);
     drag.current = null;
-    if (state.intent === "lift") {
+    if (!cancelled && state.intent === "lift") {
       const rect = stripRef.current?.getBoundingClientRect();
       const inside = rect && pointInRect(
         { x: event.clientX, y: event.clientY },
         { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
       );
-      if (!inside) onDrop(state.item, { x: event.clientX, y: event.clientY });
+      if (!inside) void onDrop(state.item, { x: event.clientX, y: event.clientY });
     }
     setLifted(null);
   }
@@ -156,7 +156,8 @@ export function StickerStrip({ store, stickers, open, onDrop, onPickEmoji }: Sti
               onPointerDown={(event) => pointerDown(item, event)}
               onPointerMove={pointerMove}
               onPointerUp={pointerEnd}
-              onPointerCancel={pointerEnd}
+              onPointerCancel={(event) => pointerEnd(event, true)}
+              onLostPointerCapture={(event) => pointerEnd(event, true)}
               onContextMenu={(event) => event.preventDefault()}
             />
             {markedId === item.id && !item.builtIn && <button class="custom-sticker-delete" type="button" aria-label="Delete custom sticker" onClick={() => { setMarkedId(null); void store.removeCustomSticker(item.id); }}>×</button>}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canvasViewportMetrics } from "../../src/app/CanvasViewport";
+import { availableCanvasHeight, canvasViewportMetrics } from "../../src/app/CanvasViewport";
 
 describe("canvas viewport metrics", () => {
   it("keeps the canonical canvas on a roomy desktop", () => {
@@ -11,6 +11,22 @@ describe("canvas viewport metrics", () => {
 
     expect(metrics.scale).toBeCloseTo(375 / 402);
     expect(metrics.canvasHeight * metrics.scale).toBeCloseTo(667);
+  });
+
+  it("fits Day View to its safe-area-adjusted stage rather than raw viewport height", () => {
+    const rawViewportHeight = 852;
+    const safeAreaAdjustedHeight = 793;
+    const metrics = canvasViewportMetrics(390, safeAreaAdjustedHeight, 874, true);
+
+    expect(metrics.scale).toBeCloseTo(390 / 402);
+    expect(metrics.canvasHeight * metrics.scale).toBeCloseTo(safeAreaAdjustedHeight);
+    expect(metrics.canvasHeight * metrics.scale).toBeLessThan(rawViewportHeight);
+  });
+
+  it("lets the visual viewport shrink Day View for the iOS keyboard without double-counting safe area", () => {
+    expect(availableCanvasHeight(793, 852, true)).toBe(793);
+    expect(availableCanvasHeight(793, 496, true)).toBe(496);
+    expect(availableCanvasHeight(793, 496, false)).toBe(793);
   });
 
   it("does not shorten fixed-height Month View canvases", () => {

@@ -1,4 +1,8 @@
+import { useLayoutEffect, useRef } from "preact/hooks";
 import type { CalendarNote } from "../domain/calendar";
+import { NOTE_BODY_MAX_LENGTH } from "../domain/noteWrite";
+import { DISPLAY_NAME } from "../theme/identity";
+import { NOTE_TEXT_MAX_HEIGHT, noteTextHeight } from "./noteLayout";
 import "./notes.css";
 
 interface TornNoteProps {
@@ -15,9 +19,33 @@ interface TornNoteProps {
   onPointerMove(event: PointerEvent): void;
   onPointerUp(event: PointerEvent): void;
   onPointerCancel(event: PointerEvent): void;
+  onFocusRequest(): void;
 }
 
-export function TornNote({ note, index, linkedTitle, active, dragging, offsetY, onText, onDelete, onDoubleTap, onPointerDown, onPointerMove, onPointerUp, onPointerCancel }: TornNoteProps) {
+export function TornNote({ note, index, linkedTitle, active, dragging, offsetY, onText, onDelete, onDoubleTap, onPointerDown, onPointerMove, onPointerUp, onPointerCancel, onFocusRequest }: TornNoteProps) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  function resizeTextarea(textarea: HTMLTextAreaElement) {
+    textarea.style.height = "0px";
+    textarea.style.height = `${noteTextHeight(textarea.scrollHeight)}px`;
+    textarea.style.overflowY = textarea.scrollHeight > NOTE_TEXT_MAX_HEIGHT ? "auto" : "hidden";
+  }
+
+  useLayoutEffect(() => {
+    const textarea = textareaRef.current;
+    if (active && textarea) {
+      resizeTextarea(textarea);
+      onFocusRequest();
+    }
+  }, [active, note.body]);
+
+  useLayoutEffect(() => {
+    const textarea = textareaRef.current;
+    if (!active || !textarea) return;
+    textarea.focus({ preventScroll: true });
+    onFocusRequest();
+  }, [active]);
+
   return <article
     class={`torn-note author-${note.author} ${active || dragging ? "is-lifted" : ""}`}
     style={{ transform: `translateY(${offsetY}px) rotate(${active || dragging ? 0 : index % 2 ? 1.6 : -2.2}deg)` }}
@@ -28,9 +56,19 @@ export function TornNote({ note, index, linkedTitle, active, dragging, offsetY, 
     onPointerCancel={onPointerCancel}
   >
     <span class="note-tape" aria-hidden="true" />
-    <small>{note.author === "master" ? "ASSISTANT" : note.author === "kitty" ? "USER" : "AUTO"} · {note.timestamp}</small>
+    <small>{DISPLAY_NAME[note.author]} · {note.timestamp}</small>
     {active && note.author === "kitty"
-      ? <textarea autoFocus value={note.body} maxLength={40} aria-label="Note text" onInput={(event) => onText(event.currentTarget.value)} />
+      ? <textarea
+          ref={textareaRef}
+          value={note.body}
+          maxLength={NOTE_BODY_MAX_LENGTH}
+          aria-label="Note text"
+          onFocus={onFocusRequest}
+          onInput={(event) => {
+            resizeTextarea(event.currentTarget);
+            onText(event.currentTarget.value);
+          }}
+        />
       : <p>{note.body || " "}</p>}
     {linkedTitle && <em>↳ {linkedTitle}</em>}
     {note.liked && <span class="note-heart" aria-label="Liked">♡</span>}

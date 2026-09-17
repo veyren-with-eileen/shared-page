@@ -4,18 +4,23 @@
   inset: 0;
   display: flex;
   align-items: flex-end;
+  overflow: hidden;
   background: rgb(92 66 73 / 18%);
 }
 
 .event-editor-sheet {
   width: 100%;
   min-height: 348px;
+  max-height: 100%;
   padding: 10px 24px 14px;
   border: 1.4px solid var(--paper-border);
   border-bottom: 0;
   border-radius: 18px 18px 0 0;
   background: #fff;
   box-shadow: 0 -4px 0 rgb(214 160 166 / 16%);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .editor-handle {
