@@ -17,6 +17,7 @@ import { PlacedLayer } from "../scrapbook/PlacedLayer";
 import { StickerStrip } from "../scrapbook/StickerStrip";
 import { nextStickerPickerOpen } from "../scrapbook/stickerPicker";
 import { processPhoto } from "../scrapbook/imageProcessing";
+import { timelineVisibility } from "./keyboardViewport";
 import "./day.css";
 
 const FIRST_HOUR = 6;
@@ -115,6 +116,7 @@ export function DayPage({ store, scrapbook, dateKey, onBack, onDayChange }: DayP
   const [editingSpan, setEditingSpan] = useState<CalendarSpan | null>(null);
   const [fabOpen, setFabOpen] = useState(false);
   const [activeNoteId, setActiveNoteId] = useState<string | null>(null);
+  const [noteEditorFocused, setNoteEditorFocused] = useState(false);
   const [draggingNoteId, setDraggingNoteId] = useState<string | null>(null);
   const [activeNoteOffset, setActiveNoteOffset] = useState(0);
   const [selectedPlacedId, setSelectedPlacedId] = useState<string | null>(null);
@@ -138,6 +140,7 @@ export function DayPage({ store, scrapbook, dateKey, onBack, onDayChange }: DayP
     setEditingSpan(null);
     setFabOpen(false);
     setActiveNoteId(null);
+    setNoteEditorFocused(false);
     setDraggingNoteId(null);
     setActiveNoteOffset(0);
     setSelectedPlacedId(null);
@@ -146,41 +149,73 @@ export function DayPage({ store, scrapbook, dateKey, onBack, onDayChange }: DayP
     void store.markSeen(dateKey);
   }, [store, dateKey]);
 
-  function keepActiveNoteVisible() {
+  function keepActiveNoteVisible(keyboardAware = noteEditorFocused) {
     const timeline = timelineRef.current;
     const position = activeNotePositionRef.current;
     const noteElement = position?.querySelector<HTMLElement>(".torn-note");
     if (!timeline || !position || !noteElement) return;
+    const rect = timeline.getBoundingClientRect();
+    const visibility = timelineVisibility(
+      { top: rect.top, bottom: rect.bottom, width: rect.width },
+      timeline.clientWidth,
+      timeline.clientHeight,
+      keyboardAware && window.visualViewport
+        ? { height: window.visualViewport.height, offsetTop: window.visualViewport.offsetTop }
+        : null
+    );
+    timeline.style.setProperty(
+      "--keyboard-scroll-spacer",
+      `${keyboardAware ? visibility.bottomOcclusion : 0}px`
+    );
     timeline.scrollTop = scrollTopForVisibleItem(
       timeline.scrollTop,
       timeline.clientHeight,
       timeline.scrollHeight,
       position.offsetTop + activeNoteOffset,
-      noteElement.offsetHeight
+      noteElement.offsetHeight,
+      visibility.topInset,
+      visibility.visibleHeight
     );
   }
 
+  function noteFocusChange(focused: boolean) {
+    setNoteEditorFocused(focused);
+    if (focused) {
+      window.requestAnimationFrame(() => keepActiveNoteVisible(true));
+    } else {
+      timelineRef.current?.style.setProperty("--keyboard-scroll-spacer", "0px");
+    }
+  }
+
   useEffect(() => {
-    if (!activeNoteId) return;
+    if (!activeNoteId || !noteEditorFocused) {
+      timelineRef.current?.style.setProperty("--keyboard-scroll-spacer", "0px");
+      return;
+    }
     const timeline = timelineRef.current;
     if (!timeline) return;
     let frame = 0;
     const scheduleVisibilityCheck = () => {
       window.cancelAnimationFrame(frame);
-      frame = window.requestAnimationFrame(keepActiveNoteVisible);
+      frame = window.requestAnimationFrame(() => keepActiveNoteVisible(true));
     };
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleVisibilityCheck);
     observer?.observe(timeline);
+    const noteElement = activeNotePositionRef.current?.querySelector<HTMLElement>(".torn-note");
+    if (noteElement) observer?.observe(noteElement);
     window.visualViewport?.addEventListener("resize", scheduleVisibilityCheck);
+    window.visualViewport?.addEventListener("scroll", scheduleVisibilityCheck);
     window.addEventListener("resize", scheduleVisibilityCheck);
     scheduleVisibilityCheck();
     return () => {
       window.cancelAnimationFrame(frame);
       observer?.disconnect();
       window.visualViewport?.removeEventListener("resize", scheduleVisibilityCheck);
+      window.visualViewport?.removeEventListener("scroll", scheduleVisibilityCheck);
       window.removeEventListener("resize", scheduleVisibilityCheck);
+      timeline.style.setProperty("--keyboard-scroll-spacer", "0px");
     };
-  }, [activeNoteId]);
+  }, [activeNoteId, noteEditorFocused]);
 
   function beginEdit(event: DayEvent) {
     const dto = store.event(event.id);
@@ -226,6 +261,7 @@ export function DayPage({ store, scrapbook, dateKey, onBack, onDayChange }: DayP
       void store.commitNote(note.id);
     }
     setActiveNoteId(null);
+    setNoteEditorFocused(false);
     setDraggingNoteId(null);
     setActiveNoteOffset(0);
   }
@@ -346,7 +382,7 @@ export function DayPage({ store, scrapbook, dateKey, onBack, onDayChange }: DayP
             {notes.map((note, index) => {
               const linkedTitle = note.linkedEventId ? payload.timed.find((event) => event.id === note.linkedEventId)?.title : undefined;
               const active = activeNoteId === note.id;
-              return <div ref={active ? activeNotePositionRef : undefined} class="note-position" style={{ left: `${note.author === "master" ? 58 : 214}px`, top: `${noteBaseY(note, index)}px` }} key={note.id}><TornNote note={note} index={index} linkedTitle={linkedTitle} active={active} dragging={draggingNoteId === note.id} offsetY={active ? activeNoteOffset : 0} onText={(body) => store.setNoteText(note.id, body)} onDelete={() => { setActiveNoteId(null); setActiveNoteOffset(0); void store.deleteNote(note.id); }} onDoubleTap={() => void store.toggleNoteLike(note.id)} onPointerDown={(event) => notePointerDown(note, event)} onPointerMove={notePointerMove} onPointerUp={endNotePointer} onPointerCancel={endNotePointer} onFocusRequest={keepActiveNoteVisible} /></div>;
+              return <div ref={active ? activeNotePositionRef : undefined} class="note-position" style={{ left: `${note.author === "master" ? 58 : 214}px`, top: `${noteBaseY(note, index)}px` }} key={note.id}><TornNote note={note} index={index} linkedTitle={linkedTitle} active={active} dragging={draggingNoteId === note.id} offsetY={active ? activeNoteOffset : 0} onText={(body) => store.setNoteText(note.id, body)} onDelete={() => { setActiveNoteId(null); setNoteEditorFocused(false); setActiveNoteOffset(0); void store.deleteNote(note.id); }} onDoubleTap={() => void store.toggleNoteLike(note.id)} onPointerDown={(event) => notePointerDown(note, event)} onPointerMove={notePointerMove} onPointerUp={endNotePointer} onPointerCancel={endNotePointer} onFocusRequest={() => keepActiveNoteVisible(true)} onFocusChange={noteFocusChange} /></div>;
             })}
             <PlacedLayer
               store={scrapbook}

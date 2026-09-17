@@ -22,6 +22,11 @@ describe("torn note layout", () => {
     expect(scrollTopForVisibleItem(200, 400, 1042, 540, 100)).toBe(252);
   });
 
+  it("uses the keyboard-visible slice while preserving the Timeline as scroll owner", () => {
+    expect(scrollTopForVisibleItem(200, 600, 1342, 620, 100, 0, 300)).toBe(432);
+    expect(scrollTopForVisibleItem(200, 600, 1342, 210, 100, 40, 260)).toBe(158);
+  });
+
   it("clamps keyboard visibility scrolling to the timeline range", () => {
     expect(scrollTopForVisibleItem(0, 400, 1042, -30, 100)).toBe(0);
     expect(scrollTopForVisibleItem(600, 400, 1042, 990, 120)).toBe(642);

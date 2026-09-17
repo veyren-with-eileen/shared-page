@@ -21,6 +21,12 @@ html.is-calendar-route #app {
   overscroll-behavior: none;
 }
 
+html.is-day-route body {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+}
+
 body {
   background: #fff;
   color: var(--ink-title);

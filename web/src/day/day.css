@@ -217,6 +217,7 @@
 }
 
 .day-timeline {
+  --keyboard-scroll-spacer: 0px;
   min-height: 0;
   flex: 1 1 auto;
   margin-top: 2px;
@@ -225,11 +226,18 @@
   overscroll-behavior: contain;
   touch-action: pan-y;
   -webkit-overflow-scrolling: touch;
+  overflow-anchor: none;
   scrollbar-width: thin;
   scrollbar-color: var(--paper-border) transparent;
 }
+.day-timeline::after {
+  display: block;
+  height: var(--keyboard-scroll-spacer);
+  content: "";
+  pointer-events: none;
+}
 .day-timeline.is-note-busy { overflow-y: hidden; }
-.note-position { position: absolute; z-index: 7; width: 174px; height: 0; }
+.note-position { position: absolute; z-index: 7; width: 180px; height: 0; }
 
 .sticker-dismiss-layer {
   position: fixed;
