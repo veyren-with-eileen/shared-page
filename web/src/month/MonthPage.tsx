@@ -1,5 +1,4 @@
 import {
-  AUTHOR_LABEL,
   SPECIAL_DAY_TYPES,
   type Author,
   type CalendarMonth,
@@ -31,6 +30,7 @@ import {
   SpanGestureSession,
   type SpanGestureEffect,
 } from "./spanGesture";
+import { DISPLAY_NAME } from "../theme/identity";
 import "./month.css";
 
 interface MonthPageProps {
@@ -303,7 +303,7 @@ export function MonthPage({ store, scrapbook, month, onMonthChange, onDayOpen }:
             {(["kitty", "master", "system"] as const).map((author) => (
               <span class="legend-item" key={author}>
                 <i class={authorClass(author)} />
-                {AUTHOR_LABEL[author]}
+                {DISPLAY_NAME[author]}
               </span>
             ))}
             <span class="legend-spacer" />
