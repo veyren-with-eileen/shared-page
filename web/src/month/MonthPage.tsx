@@ -1,5 +1,4 @@
 import {
-  SPECIAL_DAY_TYPES,
   type Author,
   type CalendarMonth,
   type CalendarSpan,
@@ -31,6 +30,7 @@ import {
   type SpanGestureEffect,
 } from "./spanGesture";
 import { DISPLAY_NAME } from "../theme/identity";
+import { hasSpecialDay } from "./monthSemantics";
 import "./month.css";
 
 interface MonthPageProps {
@@ -222,9 +222,7 @@ export function MonthPage({ store, scrapbook, month, onMonthChange, onDayOpen }:
               const spans = cell.inMonth ? spanForDay(payload, cell.day) : [];
               const period = cell.inMonth ? periodForDay(payload, cell.day) : undefined;
               const isToday = cell.inMonth && cell.day === today;
-              const isSpecial = events.some((event) =>
-                event.eventType ? SPECIAL_DAY_TYPES.has(event.eventType) : false
-              );
+              const isSpecial = hasSpecialDay(events);
               const unseen = cell.inMonth && unseenDays.has(dayKey(month, cell.day));
               const isPreview = cell.inMonth && preview && cell.day >= preview.start && cell.day <= preview.end;
 

@@ -21,6 +21,9 @@ export function nextStickerPickerOpen(open: boolean, action: StickerPickerAction
 export type StickerDragIntent = "undecided" | "scroll" | "lift";
 export type StickerDragCompletion = "none" | "drop" | "cancel";
 
+/** The transient WebKit compositor layer must not rasterize a transparent-PNG shadow. */
+export const STICKER_DRAG_PREVIEW_FILTER = "none" as const;
+
 export function stickerDragCompletion(
   intent: StickerDragIntent,
   cancelled: boolean,

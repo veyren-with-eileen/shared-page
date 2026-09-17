@@ -1,4 +1,4 @@
-import type { EventDTO, EventDraft, EventWritePayload } from "./calendar";
+import { isSpecialDayType, type EventDTO, type EventDraft, type EventWritePayload, type SpecialDayType } from "./calendar";
 import {
   adjacentDayKey,
   currentProductDay,
@@ -32,7 +32,8 @@ export function eventWritePayload(draft: EventDraft): EventWritePayload {
       title,
       starts_at: isoTaipei(draft.date, "00:00"),
       ends_at: isoTaipei(tomorrow, "00:00"),
-      precision: "day"
+      precision: "day",
+      event_type: draft.eventType ?? "custom"
     };
   }
 
@@ -47,7 +48,8 @@ export function eventWritePayload(draft: EventDraft): EventWritePayload {
     title,
     starts_at: isoTaipei(draft.date, draft.startTime),
     ends_at: isoTaipei(draft.date, draft.endTime),
-    precision: "hour"
+    precision: "hour",
+    event_type: draft.eventType ?? "custom"
   };
 }
 
@@ -56,7 +58,7 @@ function hhmm(hour: number, minute: number): string {
 }
 
 export function draftForNewEvent(date = currentProductDay()): EventDraft {
-  return { title: "", date, startTime: "09:00", endTime: "10:00", allDay: false };
+  return { title: "", date, startTime: "09:00", endTime: "10:00", allDay: false, eventType: null };
 }
 
 export function draftFromEvent(dto: EventDTO): EventDraft {
@@ -69,7 +71,21 @@ export function draftFromEvent(dto: EventDTO): EventDraft {
     date: dayKey({ year: startParts.year, month: startParts.month }, startParts.day),
     startTime: hhmm(startParts.hour, startParts.minute),
     endTime: hhmm(endParts.hour, endParts.minute),
-    allDay: (dto.precision ?? "hour") === "day"
+    allDay: (dto.precision ?? "hour") === "day",
+    eventType: isSpecialDayType(dto.eventType) ? dto.eventType : null
+  };
+}
+
+export function selectDraftEventType(draft: EventDraft, eventType: SpecialDayType | null): EventDraft {
+  if (eventType) return { ...draft, eventType, allDay: true };
+  if (!draft.eventType) return { ...draft, eventType: null };
+  const invalidTimedRange = draft.startTime === draft.endTime;
+  return {
+    ...draft,
+    eventType: null,
+    allDay: false,
+    startTime: invalidTimedRange ? "09:00" : draft.startTime,
+    endTime: invalidTimedRange ? "10:00" : draft.endTime
   };
 }
 
@@ -82,7 +98,7 @@ export function provisionalEvent(payload: EventWritePayload, id: string): EventD
     endsAt: payload.ends_at,
     timezone: "Asia/Taipei",
     precision: payload.precision,
-    eventType: "custom",
+    eventType: payload.event_type === "custom" ? null : payload.event_type,
     source: "manual",
     createdBy: "kitty",
     revision: null,
@@ -100,6 +116,7 @@ export function optimisticEvent(before: EventDTO, payload: EventWritePayload): E
     title: payload.title,
     startsAt: payload.starts_at,
     endsAt: payload.ends_at,
-    precision: payload.precision
+    precision: payload.precision,
+    eventType: payload.event_type === "custom" ? null : payload.event_type
   };
 }

@@ -36,6 +36,7 @@ describe("span wire payloads", () => {
       starts_at: "2026-09-15T00:00:00+08:00",
       ends_at: "2026-09-16T00:00:00+08:00",
       precision: "day",
+      event_type: "custom",
       metadata: { kind: "span" }
     });
     expect(spanCreatePayload({ title: "many", month: september, startDay: 15, endDay: 17 }).ends_at)
@@ -48,7 +49,8 @@ describe("span wire payloads", () => {
       title: "changed",
       starts_at: "2026-09-16T00:00:00+08:00",
       ends_at: "2026-09-21T00:00:00+08:00",
-      precision: "day"
+      precision: "day",
+      event_type: "custom"
     });
     expect(optimisticSpan(dto(), payload).metadata).toEqual({ kind: "span", preserved: true });
   });
@@ -89,11 +91,11 @@ describe("remove day mutation plans", () => {
       kind: "split",
       create: {
         title: "trip", starts_at: "2026-09-18T00:00:00+08:00",
-        ends_at: "2026-09-20T00:00:00+08:00", precision: "day", metadata: { kind: "span" }
+        ends_at: "2026-09-20T00:00:00+08:00", precision: "day", event_type: "custom", metadata: { kind: "span" }
       },
       patch: {
         title: "trip", starts_at: "2026-09-15T00:00:00+08:00",
-        ends_at: "2026-09-17T00:00:00+08:00", precision: "day"
+        ends_at: "2026-09-17T00:00:00+08:00", precision: "day", event_type: "custom"
       }
     });
   });
@@ -107,7 +109,7 @@ describe("remove day mutation plans", () => {
       kind: "patch",
       patch: {
         title: "trip", starts_at: "2026-08-29T16:00:00Z",
-        ends_at: "2026-09-01T00:00:00+08:00", precision: "day"
+        ends_at: "2026-09-01T00:00:00+08:00", precision: "day", event_type: "custom"
       }
     });
   });

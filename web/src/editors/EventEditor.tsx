@@ -1,8 +1,9 @@
 import { useMemo, useState } from "preact/hooks";
-import type { EventDTO, EventDraft } from "../domain/calendar";
+import type { EventDTO, EventDraft, SpecialDayType } from "../domain/calendar";
 import { authorFromWire } from "../domain/calendarDTO";
-import { draftForNewEvent, draftFromEvent, eventWritePayload } from "../domain/eventWrite";
+import { draftForNewEvent, draftFromEvent, eventWritePayload, selectDraftEventType } from "../domain/eventWrite";
 import { parseDayKey } from "../domain/calendarTime";
+import { EVENT_TYPE_LABEL } from "../theme/eventType";
 import "./eventEditor.css";
 
 interface EventEditorProps {
@@ -27,6 +28,24 @@ export function EventEditor({ dateKey, editing, onClose, onSave, onDelete }: Eve
 
   function patch(value: Partial<EventDraft>) {
     setDraft((current) => ({ ...current, ...value }));
+    setValidation(null);
+  }
+
+  function selectType(eventType: SpecialDayType | null) {
+    setDraft((current) => selectDraftEventType(current, eventType));
+    setValidation(null);
+  }
+
+  function setAllDay(allDay: boolean) {
+    setDraft((current) => {
+      const invalidTimedRange = current.startTime === current.endTime;
+      return {
+        ...current,
+        allDay,
+        startTime: !allDay && invalidTimedRange ? "09:00" : current.startTime,
+        endTime: !allDay && invalidTimedRange ? "10:00" : current.endTime
+      };
+    });
     setValidation(null);
   }
 
@@ -78,6 +97,14 @@ export function EventEditor({ dateKey, editing, onClose, onSave, onDelete }: Eve
             />
           </label>
 
+          <fieldset class="editor-type-row">
+            <legend class="sr-only">活動類型</legend>
+            <button type="button" class={draft.eventType === null ? "is-selected" : ""} aria-pressed={draft.eventType === null} onClick={() => selectType(null)}>活動</button>
+            {(Object.entries(EVENT_TYPE_LABEL) as Array<[SpecialDayType, string]>).map(([value, label]) => (
+              <button type="button" class={draft.eventType === value ? "is-selected" : ""} aria-pressed={draft.eventType === value} onClick={() => selectType(value)} key={value}>{label}</button>
+            ))}
+          </fieldset>
+
           <div class="editor-date-row">
             <label>
               <span>日期</span>
@@ -91,11 +118,13 @@ export function EventEditor({ dateKey, editing, onClose, onSave, onDelete }: Eve
               <input
                 type="checkbox"
                 checked={draft.allDay}
-                onChange={(event) => patch({ allDay: event.currentTarget.checked })}
+                disabled={draft.eventType !== null}
+                onChange={(event) => setAllDay(event.currentTarget.checked)}
               />
               <i aria-hidden="true" />
               <span class="sr-only">All day</span>
             </label>
+            {draft.eventType && <small>{EVENT_TYPE_LABEL[draft.eventType]}以全天顯示</small>}
           </div>
 
           <div class={draft.allDay ? "editor-time-row is-disabled" : "editor-time-row"}>

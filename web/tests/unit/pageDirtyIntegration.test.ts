@@ -7,7 +7,7 @@ import { ScrapbookStore } from "../../src/state/scrapbookStore";
 import type { PageDirtySink } from "../../src/snapshot/pageDirty";
 
 const september = { year: 2026, month: 9 };
-const eventDraft = { title: "event", date: "2026-09-15", startTime: "10:00", endTime: "11:00", allDay: false };
+const eventDraft = { title: "event", date: "2026-09-15", startTime: "10:00", endTime: "11:00", allDay: false, eventType: null } as const;
 
 class DirtySpy implements PageDirtySink {
   keys: string[] = [];

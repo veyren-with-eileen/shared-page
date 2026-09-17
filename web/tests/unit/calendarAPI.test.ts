@@ -15,7 +15,7 @@ describe("calendar mutation API", () => {
       .mockResolvedValueOnce(new Response(JSON.stringify(response), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ ...response, revision: 2 }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
-    const payload = { title: "test", starts_at: "2026-09-15T10:00:00+08:00", ends_at: "2026-09-15T11:00:00+08:00", precision: "hour" as const };
+    const payload = { title: "test", starts_at: "2026-09-15T10:00:00+08:00", ends_at: "2026-09-15T11:00:00+08:00", precision: "hour" as const, event_type: "anniversary" as const };
 
     await createCalendarEvent(config, payload);
     await updateCalendarEvent(config, "cal_1", payload);

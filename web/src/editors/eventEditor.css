@@ -77,11 +77,37 @@
   outline: 0;
   background: transparent;
   color: var(--ink-note-kitty);
-  font-family: var(--font-hand-kitty);
+  font-family: var(--font-hand-author, var(--font-hand-system));
   font-size: 21px;
 }
 .event-editor-sheet.author-master .editor-title-field input { color: var(--ink-note-master); }
 .editor-title-field input::placeholder { color: var(--ink-dim-day); font-family: var(--font-script); }
+
+.editor-type-row {
+  display: flex;
+  gap: 6px;
+  margin: 12px 0 0;
+  padding: 0;
+  border: 0;
+}
+.editor-type-row button {
+  min-height: 28px;
+  padding: 4px 11px;
+  border: 1px solid var(--paper-border);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink-sub);
+  font: 13px var(--font-body);
+}
+.editor-type-row button.is-selected {
+  border-color: var(--ink-kitty);
+  background: var(--paper-capsule);
+  color: var(--ink-note-kitty);
+}
+.event-editor-sheet.author-master .editor-type-row button.is-selected {
+  border-color: var(--ink-master);
+  color: var(--ink-note-master);
+}
 
 .editor-date-row { margin-top: 12px; }
 .editor-date-row label,
@@ -98,8 +124,10 @@
 }
 
 .editor-all-day-row { gap: 12px; margin-top: 12px; color: var(--ink-kitty); font: 15px var(--font-body); }
+.editor-all-day-row small { color: var(--ink-sub); font-size: 11px; }
 .pink-toggle { position: relative; display: block; width: 42px; height: 24px; }
 .pink-toggle input { position: absolute; opacity: 0; }
+.pink-toggle input:disabled + i { opacity: .72; }
 .pink-toggle i { position: absolute; inset: 0; border-radius: 999px; background: #eadfe1; transition: background 180ms ease; }
 .pink-toggle i::after {
   position: absolute;

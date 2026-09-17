@@ -1,4 +1,4 @@
-import { AUTHOR_LABEL, SPECIAL_DAY_TYPES, type Author, type CalendarNote, type DayEvent, type DayPayload } from "../domain/calendar";
+import { type Author, type CalendarNote, type DayEvent, type DayPayload } from "../domain/calendar";
 import { parseDayKey, productDateParts, weekdayLabelForDay } from "../domain/calendarTime";
 import { itemBaseSize, type PlacedItem } from "../domain/scrapbook";
 import { TornNote } from "../notes/TornNote";
@@ -14,6 +14,8 @@ import {
   pageTimelineY
 } from "./pageCrop";
 import { eventVisualLayout } from "../day/eventLayout";
+import { DISPLAY_NAME } from "../theme/identity";
+import { eventTypeLabel } from "../theme/eventType";
 import "./snapshot.css";
 
 export interface SnapshotDayState {
@@ -91,11 +93,14 @@ export function DayPageSnapshot({ state, scrapbook }: { state: SnapshotDayState;
     </header>
 
     {state.payload.allDay.length > 0 && <section class="snapshot-all-day-rows">
-      {state.payload.allDay.map((event) => <div class={`snapshot-all-day-event ${authorClass(event.author)} ${event.eventType && SPECIAL_DAY_TYPES.has(event.eventType) ? "has-special-decoration" : ""}`} key={`${event.id}-${event.spanIndex ?? 0}`}>
-        <strong>{event.title}</strong>
-        <span>{eventLabel(event)} · {AUTHOR_LABEL[event.author]}</span>
-        {event.eventType && SPECIAL_DAY_TYPES.has(event.eventType) && <img src="/assets/stamp-heart-mini.png" alt="" />}
-      </div>)}
+      {state.payload.allDay.map((event) => {
+        const specialLabel = eventTypeLabel(event.eventType);
+        return <div class={`snapshot-all-day-event ${authorClass(event.author)} ${specialLabel ? "has-special-decoration" : ""}`} key={`${event.id}-${event.spanIndex ?? 0}`}>
+          <strong>{event.title}</strong>
+          <span>{eventLabel(event)} · {DISPLAY_NAME[event.author]}{specialLabel && <b class="event-type-cue"> · {specialLabel}</b>}</span>
+          {specialLabel && <img src="/assets/stamp-heart-mini.png" alt="" />}
+        </div>;
+      })}
     </section>}
 
     <section class="snapshot-timeline-window" style={{ height: `${crop.height}px` }}>
@@ -105,7 +110,7 @@ export function DayPageSnapshot({ state, scrapbook }: { state: SnapshotDayState;
         {state.payload.timed.filter((event) => event.endMinute > PAGE_FIRST_HOUR * 60 && event.startMinute < 1440).map((event) => {
           const layout = eventVisualLayout(eventHeight(event));
           return <div class={`snapshot-timed-event density-${layout.density} ${authorClass(event.author)}`} style={eventStyle(event)} key={`${event.id}-${event.startMinute}`}>
-            <strong>{event.title}</strong>{layout.showMetadata && <span>{eventLabel(event)} · {AUTHOR_LABEL[event.author]}</span>}
+            <strong>{event.title}</strong>{layout.showMetadata && <span>{eventLabel(event)} · {DISPLAY_NAME[event.author]}</span>}
           </div>;
         })}
         {state.notes.map((note, index) => {

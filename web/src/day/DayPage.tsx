@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import { AUTHOR_LABEL, SPECIAL_DAY_TYPES, type Author, type CalendarNote, type CalendarSpan, type DayEvent, type EventDTO, type EventDraft } from "../domain/calendar";
+import { type Author, type CalendarNote, type CalendarSpan, type DayEvent, type EventDTO, type EventDraft } from "../domain/calendar";
 import { materializeDay } from "../domain/calendarDTO";
 import { adjacentDayKey, currentProductDay, monthFromDayKey, monthLabel, parseDayKey, productDateParts, weekdayLabelForDay, weekdayLetterForDay } from "../domain/calendarTime";
 import { useCalendarMonth } from "../state/useCalendarMonth";
@@ -19,6 +19,8 @@ import { nextStickerPickerOpen } from "../scrapbook/stickerPicker";
 import { processPhoto } from "../scrapbook/imageProcessing";
 import { timelineVisibility } from "./keyboardViewport";
 import { eventVisualLayout } from "./eventLayout";
+import { DISPLAY_NAME } from "../theme/identity";
+import { eventTypeLabel } from "../theme/eventType";
 import "./day.css";
 
 const FIRST_HOUR = 6;
@@ -81,11 +83,12 @@ function stripDays(dateKey: string): string[] {
 function EventDetail({ event, dateKey, onClose, onEdit }: { event: DayEvent; dateKey: string; onClose(): void; onEdit(): void }) {
   const parts = parseDayKey(dateKey)!;
   const editable = !event.isSpan && !event.continuesBefore && !event.continuesAfter;
+  const specialLabel = eventTypeLabel(event.eventType);
   return (
     <div class="event-detail-backdrop" role="presentation" onClick={onClose}>
       <section class={`event-detail-sheet ${authorClass(event.author)}`} role="dialog" aria-modal="true" aria-labelledby="event-detail-title" onClick={(click) => click.stopPropagation()}>
         <div class="detail-handle" aria-hidden="true" />
-        <div class="detail-kicker"><span>{AUTHOR_LABEL[event.author]}</span>{event.eventType && <span>{event.eventType.toUpperCase()}</span>}</div>
+        <div class="detail-kicker"><span>{DISPLAY_NAME[event.author]}</span>{specialLabel && <span>{specialLabel}</span>}</div>
         <h2 id="event-detail-title">{event.title}</h2>
         <dl>
           <div><dt>DATE</dt><dd>{parts.year}-{String(parts.month).padStart(2, "0")}-{String(parts.day).padStart(2, "0")} · {weekdayLabelForDay(dateKey)}</dd></div>
@@ -368,8 +371,8 @@ export function DayPage({ store, scrapbook, dateKey, onBack, onDayChange }: DayP
 
         {payload.allDay.length > 0 && <section class="all-day-rows" aria-label="All-day events">
           {payload.allDay.map((event) => {
-            const decorated = Boolean(event.eventType && SPECIAL_DAY_TYPES.has(event.eventType));
-            return <button type="button" class={`all-day-event ${authorClass(event.author)} ${decorated ? "has-special-decoration" : ""} ${store.isPending(event.id) ? "is-pending" : ""}`} key={event.id} onClick={() => openEvent(event)}><strong>{event.title}</strong><span>{eventTimeLabel(event)} · {AUTHOR_LABEL[event.author]}</span>{decorated && <img src="/assets/stamp-heart-mini.png" alt="" aria-hidden="true" />}</button>;
+            const specialLabel = eventTypeLabel(event.eventType);
+            return <button type="button" class={`all-day-event ${authorClass(event.author)} ${specialLabel ? "has-special-decoration" : ""} ${store.isPending(event.id) ? "is-pending" : ""}`} key={event.id} onClick={() => openEvent(event)}><strong>{event.title}</strong><span>{eventTimeLabel(event)} · {DISPLAY_NAME[event.author]}{specialLabel && <b class="event-type-cue"> · {specialLabel}</b>}</span>{specialLabel && <img src="/assets/stamp-heart-mini.png" alt="" aria-hidden="true" />}</button>;
           })}
         </section>}
 
@@ -382,7 +385,7 @@ export function DayPage({ store, scrapbook, dateKey, onBack, onDayChange }: DayP
             {Array.from({ length: LAST_HOUR - FIRST_HOUR + 1 }, (_, index) => FIRST_HOUR + index).map((hour) => <div class="hour-row" style={{ top: `${10 + (hour - FIRST_HOUR) * ROW_HEIGHT}px` }} key={hour}><span>{String(hour).padStart(2, "0")}:00</span><i /></div>)}
             {visibleTimed.map((event) => {
               const layout = eventVisualLayout(eventHeight(event));
-              return <button type="button" class={`timed-event density-${layout.density} ${authorClass(event.author)} ${store.isPending(event.id) ? "is-pending" : ""}`} style={eventStyle(event)} key={`${event.id}-${event.startMinute}`} onClick={() => setSelectedEvent(event)}><strong>{event.title}</strong>{layout.showMetadata && <span>{eventTimeLabel(event)} · {AUTHOR_LABEL[event.author]}</span>}</button>;
+              return <button type="button" class={`timed-event density-${layout.density} ${authorClass(event.author)} ${store.isPending(event.id) ? "is-pending" : ""}`} style={eventStyle(event)} key={`${event.id}-${event.startMinute}`} onClick={() => setSelectedEvent(event)}><strong>{event.title}</strong>{layout.showMetadata && <span>{eventTimeLabel(event)} · {DISPLAY_NAME[event.author]}</span>}</button>;
             })}
             {notes.map((note, index) => {
               const linkedTitle = note.linkedEventId ? payload.timed.find((event) => event.id === note.linkedEventId)?.title : undefined;

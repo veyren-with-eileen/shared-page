@@ -3,7 +3,7 @@ import { createPortal } from "preact/compat";
 import { firstGrapheme, pointInRect, stickerBaseSize, stripGestureIntent, type Point, type StickerLibraryItem } from "../domain/scrapbook";
 import { processCustomSticker } from "./imageProcessing";
 import type { ScrapbookStore } from "../state/scrapbookStore";
-import { stickerDragCompletion, stickerPreviewTransform, type StickerDragIntent } from "./stickerPicker";
+import { STICKER_DRAG_PREVIEW_FILTER, stickerDragCompletion, stickerPreviewTransform, type StickerDragIntent } from "./stickerPicker";
 import "./scrapbook.css";
 
 const CELL = 48;
@@ -196,7 +196,7 @@ export function StickerStrip({ store, stickers, open, onDrop, onPickEmoji }: Sti
       const height = size.y * lifted.scale;
       return source && createPortal(
         <div class="sticker-drag-layer" aria-hidden="true">
-          <img class="lifted-sticker" src={source} alt="" style={{ width: `${width}px`, height: `${height}px`, transform: stickerPreviewTransform(lifted.point.x, lifted.point.y, width, height) }} />
+          <img class="lifted-sticker" src={source} alt="" style={{ width: `${width}px`, height: `${height}px`, filter: STICKER_DRAG_PREVIEW_FILTER, transform: stickerPreviewTransform(lifted.point.x, lifted.point.y, width, height) }} />
         </div>,
         document.body
       );

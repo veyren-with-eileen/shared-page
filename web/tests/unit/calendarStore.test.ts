@@ -5,7 +5,7 @@ import { materializeDay } from "../../src/domain/calendarDTO";
 import { CalendarStore } from "../../src/state/calendarStore";
 
 const september = { year: 2026, month: 9 };
-const draft = { title: "Checkpoint 3A test", date: "2026-09-15", startTime: "10:00", endTime: "11:00", allDay: false };
+const draft = { title: "Checkpoint 3A test", date: "2026-09-15", startTime: "10:00", endTime: "11:00", allDay: false, eventType: null } as const;
 
 function event(overrides: Partial<EventDTO> = {}): EventDTO {
   return {
@@ -63,7 +63,7 @@ describe("CalendarStore optimistic mutations", () => {
     vi.mocked(api.listMonth).mockImplementation(async (month) => month.month === 9 ? [event()] : []);
     vi.mocked(api.updateEvent).mockImplementation(async (_id, payload) => event({
       title: payload.title, startsAt: payload.starts_at, endsAt: payload.ends_at,
-      precision: payload.precision, revision: 12
+      precision: payload.precision, eventType: payload.event_type === "custom" ? null : payload.event_type, revision: 12
     }));
     const store = new CalendarStore(api);
     await store.loadMonth(september);
@@ -78,13 +78,26 @@ describe("CalendarStore optimistic mutations", () => {
 
   it("supports timed to all-day and all-day to timed payloads", async () => {
     const api = gateway();
-    vi.mocked(api.updateEvent).mockImplementation(async (_id, payload) => event({ title: payload.title, startsAt: payload.starts_at, endsAt: payload.ends_at, precision: payload.precision, revision: 2 }));
+    vi.mocked(api.updateEvent).mockImplementation(async (_id, payload) => event({ title: payload.title, startsAt: payload.starts_at, endsAt: payload.ends_at, precision: payload.precision, eventType: payload.event_type === "custom" ? null : payload.event_type, revision: 2 }));
     const store = new CalendarStore(api);
     await store.loadMonth(september);
     await store.updateEvent("cal_1", { ...draft, allDay: true });
     expect(vi.mocked(api.updateEvent).mock.calls[0][1]).toMatchObject({ precision: "day", ends_at: "2026-09-16T00:00:00+08:00" });
     await store.updateEvent("cal_1", { ...draft, startTime: "13:30", endTime: "14:30" });
     expect(vi.mocked(api.updateEvent).mock.calls[1][1]).toMatchObject({ precision: "hour", starts_at: "2026-09-15T13:30:00+08:00" });
+  });
+
+  it("preserves special-day type through optimistic create and update payloads", async () => {
+    const api = gateway([]);
+    vi.mocked(api.createEvent).mockImplementation(async (payload) => event({ title: payload.title, startsAt: payload.starts_at, endsAt: payload.ends_at, precision: payload.precision, eventType: payload.event_type, revision: 1 }));
+    vi.mocked(api.updateEvent).mockImplementation(async (_id, payload) => event({ title: payload.title, startsAt: payload.starts_at, endsAt: payload.ends_at, precision: payload.precision, eventType: payload.event_type, revision: 2 }));
+    const store = new CalendarStore(api);
+    await store.loadMonth(september);
+    const created = await store.createEvent({ ...draft, allDay: true, eventType: "anniversary" });
+    expect(api.createEvent).toHaveBeenCalledWith(expect.objectContaining({ precision: "day", event_type: "anniversary" }));
+    expect(created?.eventType).toBe("anniversary");
+    await store.updateEvent(created!.id, { ...draft, title: "birthday", allDay: true, eventType: "birthday" });
+    expect(api.updateEvent).toHaveBeenCalledWith(created!.id, expect.objectContaining({ event_type: "birthday" }));
   });
 
   it("rolls back a failed update", async () => {

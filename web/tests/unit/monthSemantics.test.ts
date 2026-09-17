@@ -1,10 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { SPECIAL_DAY_TYPES } from "../../src/domain/calendar";
+import { SPECIAL_DAY_TYPES, isSpecialDayType } from "../../src/domain/calendar";
+import { hasSpecialDay } from "../../src/month/monthSemantics";
 
 describe("Month View special-day semantics", () => {
   it("reserves the heart stamp for anniversary and birthday only", () => {
     expect([...SPECIAL_DAY_TYPES].sort()).toEqual(["anniversary", "birthday"]);
-    expect(SPECIAL_DAY_TYPES.has("holiday")).toBe(false);
-    expect(SPECIAL_DAY_TYPES.has("period")).toBe(false);
+    expect(isSpecialDayType("holiday")).toBe(false);
+    expect(isSpecialDayType("period")).toBe(false);
+  });
+
+  it("renders at most one day-level stamp even when multiple special events exist", () => {
+    expect(hasSpecialDay([{ eventType: "anniversary" }, { eventType: "birthday" }])).toBe(true);
+    expect(hasSpecialDay([{ eventType: "custom" }, { eventType: null }])).toBe(false);
   });
 });

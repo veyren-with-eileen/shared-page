@@ -2,11 +2,7 @@ export const PRODUCT_TIME_ZONE = "Asia/Taipei" as const;
 
 export type Author = "kitty" | "master" | "system";
 
-export const AUTHOR_LABEL: Record<Author, string> = {
-  kitty: "USER",
-  master: "ASSISTANT",
-  system: "AUTO"
-};
+export type SpecialDayType = "anniversary" | "birthday";
 
 export type JsonValue =
   | string
@@ -45,6 +41,7 @@ export interface EventWritePayload {
   starts_at: string;
   ends_at: string;
   precision: "hour" | "day";
+  event_type: SpecialDayType | "custom";
   metadata?: JsonValue;
 }
 
@@ -54,6 +51,7 @@ export interface EventDraft {
   startTime: string;
   endTime: string;
   allDay: boolean;
+  eventType: SpecialDayType | null;
 }
 
 export interface CalendarEvent {
@@ -159,4 +157,8 @@ export interface DayPayload {
   timed: DayEvent[];
 }
 
-export const SPECIAL_DAY_TYPES = new Set(["anniversary", "birthday"]);
+export const SPECIAL_DAY_TYPES: ReadonlySet<SpecialDayType> = new Set(["anniversary", "birthday"]);
+
+export function isSpecialDayType(value: string | null | undefined): value is SpecialDayType {
+  return typeof value === "string" && SPECIAL_DAY_TYPES.has(value as SpecialDayType);
+}

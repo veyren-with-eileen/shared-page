@@ -197,8 +197,9 @@
   font-family: var(--font-mono);
   font-size: 7px;
   letter-spacing: 0.4px;
-  text-transform: uppercase;
 }
+
+.event-type-cue { font: inherit; font-weight: 400; }
 
 .all-day-event.author-master span,
 .timed-event.author-master span {

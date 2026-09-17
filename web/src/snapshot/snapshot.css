@@ -45,11 +45,12 @@
 .snapshot-timed-event strong { overflow: hidden; width: 100%; font: 400 16px/22px var(--font-hand-author, var(--font-hand-system)); text-overflow: ellipsis; white-space: nowrap; }
 .snapshot-timed-event strong { font-size: 17px; }
 .snapshot-all-day-event span,
-.snapshot-timed-event span { color: var(--ink-kitty); font: 7px/10px var(--font-mono); letter-spacing: .4px; text-transform: uppercase; }
+.snapshot-timed-event span { color: var(--ink-kitty); font: 7px/10px var(--font-mono); letter-spacing: .4px; }
 .snapshot-all-day-event.author-master span,
 .snapshot-timed-event.author-master span { color: var(--ink-master); }
 .snapshot-all-day-event.author-system span,
 .snapshot-timed-event.author-system span { color: var(--ink-system); }
+.snapshot-all-day-event .event-type-cue { font: inherit; font-weight: 400; }
 .snapshot-all-day-event > img { position: absolute; top: -8px; right: 6px; width: 48px; height: 48px; object-fit: contain; opacity: .8; transform: rotate(-16deg); }
 
 .snapshot-timeline-window { width: 402px; margin-top: 2px; overflow: hidden; }

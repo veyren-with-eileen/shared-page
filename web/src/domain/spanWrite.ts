@@ -40,7 +40,8 @@ function visibleRangePayload(title: string, month: CalendarMonth, startDay: numb
     title,
     starts_at: midnight(start),
     ends_at: midnight(adjacentDayKey(last, 1)!),
-    precision: "day"
+    precision: "day",
+    event_type: "custom"
   };
 }
 
@@ -118,6 +119,7 @@ function segmentPayload(
     starts_at: startsAt,
     ends_at: endsAt,
     precision: "day",
+    event_type: "custom",
     ...(create ? { metadata: { kind: "span" } } : {})
   };
 }

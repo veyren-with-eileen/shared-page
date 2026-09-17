@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nextStickerPickerOpen, stickerDragCompletion, stickerPreviewTransform } from "../../src/scrapbook/stickerPicker";
+import { STICKER_DRAG_PREVIEW_FILTER, nextStickerPickerOpen, stickerDragCompletion, stickerPreviewTransform } from "../../src/scrapbook/stickerPicker";
 
 describe("sticker picker lifecycle", () => {
   it("toggles open and closed from the sticker button", () => {
@@ -28,5 +28,6 @@ describe("sticker picker lifecycle", () => {
     expect(stickerPreviewTransform(120, 200, 40, 60)).toBe(
       "translate3d(100px, 170px, 0) rotate(-4deg) scale(1.06)"
     );
+    expect(STICKER_DRAG_PREVIEW_FILTER).toBe("none");
   });
 });
