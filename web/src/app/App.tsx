@@ -74,6 +74,11 @@ export function App() {
     return () => window.removeEventListener("popstate", restore);
   }, [pageSync]);
 
+  useEffect(() => {
+    document.documentElement.classList.toggle("is-month-route", route.kind === "month");
+    return () => document.documentElement.classList.remove("is-month-route");
+  }, [route.kind]);
+
   function pushRoute(next: AppRoute, url: string, monthIndex?: number) {
     const current = currentNavigationState();
     const index = (current.index ?? 0) + 1;
@@ -128,17 +133,19 @@ export function App() {
   }
 
   return (
-    <div class="app-shell">
+    <div class={`app-shell is-${route.kind}`}>
       {route.kind === "month" ? (
-        <MonthPage
-          store={calendar}
-          scrapbook={scrapbook}
-          month={route.month}
-          onMonthChange={(month) =>
-            pushRoute({ kind: "month", month }, monthRouteUrl(month))
-          }
-          onDayOpen={openDay}
-        />
+        <div class="month-viewport-stage">
+          <MonthPage
+            store={calendar}
+            scrapbook={scrapbook}
+            month={route.month}
+            onMonthChange={(month) =>
+              pushRoute({ kind: "month", month }, monthRouteUrl(month))
+            }
+            onDayOpen={openDay}
+          />
+        </div>
       ) : (
         <DayPage
           store={calendar}

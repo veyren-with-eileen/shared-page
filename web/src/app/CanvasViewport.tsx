@@ -1,5 +1,5 @@
 import type { ComponentChildren } from "preact";
-import { useEffect, useState } from "preact/hooks";
+import { useLayoutEffect, useRef, useState } from "preact/hooks";
 
 const CANVAS_WIDTH = 402;
 
@@ -34,20 +34,34 @@ export function canvasViewportMetrics(
 }
 
 export function CanvasViewport({ children, height = 874, fitViewportHeight = false, fitWholeViewport = false }: CanvasViewportProps) {
-  const measure = () => canvasViewportMetrics(
-    window.innerWidth,
-    fitWholeViewport ? window.innerHeight : window.visualViewport?.height ?? window.innerHeight,
-    height,
-    fitViewportHeight,
-    fitWholeViewport
-  );
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const measure = () => {
+    const parentRect = fitWholeViewport
+      ? viewportRef.current?.parentElement?.getBoundingClientRect()
+      : null;
+    const parentHasSize = Boolean(parentRect && parentRect.width > 0 && parentRect.height > 0);
+    return canvasViewportMetrics(
+      parentHasSize ? parentRect!.width : window.innerWidth,
+      parentHasSize ? parentRect!.height : window.visualViewport?.height ?? window.innerHeight,
+      height,
+      fitViewportHeight,
+      fitWholeViewport
+    );
+  };
   const [metrics, setMetrics] = useState(measure);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const updateMetrics = () => setMetrics(measure());
+    const parent = viewportRef.current?.parentElement;
+    const resizeObserver = parent && typeof ResizeObserver !== "undefined"
+      ? new ResizeObserver(updateMetrics)
+      : null;
+    if (parent && resizeObserver) resizeObserver.observe(parent);
     window.addEventListener("resize", updateMetrics);
     window.visualViewport?.addEventListener("resize", updateMetrics);
+    updateMetrics();
     return () => {
+      resizeObserver?.disconnect();
       window.removeEventListener("resize", updateMetrics);
       window.visualViewport?.removeEventListener("resize", updateMetrics);
     };
@@ -55,6 +69,7 @@ export function CanvasViewport({ children, height = 874, fitViewportHeight = fal
 
   return (
     <div
+      ref={viewportRef}
       class="canvas-viewport"
       style={{
         width: `${CANVAS_WIDTH * metrics.scale}px`,

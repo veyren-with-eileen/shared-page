@@ -27,4 +27,14 @@ describe("canvas viewport metrics", () => {
     expect(metrics.canvasHeight).toBe(874);
     expect(metrics.canvasHeight * metrics.scale).toBeCloseTo(667);
   });
+
+  it("fits Month View to the safe-area-adjusted stage rather than the raw device viewport", () => {
+    const rawViewportHeight = 852;
+    const safeAreaAdjustedHeight = 793;
+    const metrics = canvasViewportMetrics(390, safeAreaAdjustedHeight, 874, false, true);
+
+    expect(metrics.scale).toBeCloseTo(safeAreaAdjustedHeight / 874);
+    expect(metrics.canvasHeight * metrics.scale).toBeCloseTo(safeAreaAdjustedHeight);
+    expect(metrics.canvasHeight * metrics.scale).toBeLessThan(rawViewportHeight);
+  });
 });

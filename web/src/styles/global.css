@@ -12,6 +12,13 @@ body,
   margin: 0;
 }
 
+html.is-month-route,
+html.is-month-route body,
+html.is-month-route #app {
+  height: 100%;
+  overflow: hidden;
+}
+
 body {
   background: #fff;
   color: var(--ink-title);
