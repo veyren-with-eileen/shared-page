@@ -15,10 +15,6 @@ export interface CanvasViewportMetrics {
   canvasHeight: number;
 }
 
-export function availableCanvasHeight(parentHeight: number, visualViewportHeight: number, followVisualViewport: boolean): number {
-  return followVisualViewport ? Math.min(parentHeight, visualViewportHeight) : parentHeight;
-}
-
 export function canvasViewportMetrics(
   viewportWidth: number,
   viewportHeight: number,
@@ -45,10 +41,7 @@ export function CanvasViewport({ children, height = 874, fitViewportHeight = fal
       ? viewportRef.current?.parentElement?.getBoundingClientRect()
       : null;
     const parentHasSize = Boolean(parentRect && parentRect.width > 0 && parentRect.height > 0);
-    const visualViewportHeight = window.visualViewport?.height ?? window.innerHeight;
-    const availableHeight = parentHasSize
-      ? availableCanvasHeight(parentRect!.height, visualViewportHeight, fitViewportHeight)
-      : visualViewportHeight;
+    const availableHeight = parentHasSize ? parentRect!.height : window.innerHeight;
     return canvasViewportMetrics(
       parentHasSize ? parentRect!.width : window.innerWidth,
       availableHeight,
@@ -67,12 +60,10 @@ export function CanvasViewport({ children, height = 874, fitViewportHeight = fal
       : null;
     if (parent && resizeObserver) resizeObserver.observe(parent);
     window.addEventListener("resize", updateMetrics);
-    window.visualViewport?.addEventListener("resize", updateMetrics);
     updateMetrics();
     return () => {
       resizeObserver?.disconnect();
       window.removeEventListener("resize", updateMetrics);
-      window.visualViewport?.removeEventListener("resize", updateMetrics);
     };
   }, [height, fitViewportHeight, fitWholeViewport]);
 

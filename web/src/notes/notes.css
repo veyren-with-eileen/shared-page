@@ -2,9 +2,9 @@
   position: absolute;
   z-index: 7;
   isolation: isolate;
-  width: 174px;
-  min-height: 88px;
-  padding: 19px 15px 28px;
+  width: 180px;
+  min-height: 94px;
+  padding: 23px 17px 30px;
   background: transparent;
   color: var(--ink-note-kitty);
   filter: drop-shadow(1.5px 2px 2.5px rgb(150 120 125 / 30%));
@@ -20,15 +20,16 @@
   content: "";
 }
 .torn-note.is-lifted { z-index: 20; filter: drop-shadow(3px 7px 8px rgb(150 120 125 / 42%)); scale: 1.05; touch-action: none; }
+.torn-note.has-linked-event { padding-bottom: 34px; }
 .torn-note.author-master { color: var(--ink-note-master); }
 .torn-note.author-master { touch-action: manipulation; }
-.torn-note small { display: block; color: var(--ink-kitty); font: 7px/10px var(--font-mono); letter-spacing: .4px; }
+.torn-note small { display: block; color: var(--ink-kitty); font: 7px/10px var(--font-mono); letter-spacing: .4px; opacity: .82; }
 .torn-note.author-master small { color: var(--ink-master); }
-.torn-note p, .torn-note textarea { width: 100%; min-height: 42px; max-height: 126px; margin: 5px 0 0; border: 0; outline: 0; background: transparent; color: inherit; font: 16px/21px var(--font-hand-kitty); white-space: pre-wrap; overflow-wrap: anywhere; }
+.torn-note p, .torn-note textarea { width: 100%; min-height: 44px; max-height: 132px; margin: 8px 0 0; border: 0; outline: 0; background: transparent; color: inherit; font: 16px/22px var(--font-hand-kitty); white-space: pre-wrap; overflow-wrap: anywhere; }
 .torn-note.author-master p { font-family: var(--font-hand-master); }
 .torn-note p { overflow-y: auto; }
-.torn-note textarea { height: 42px; padding: 0; resize: none; overflow-y: hidden; user-select: text; }
-.torn-note em { display: block; overflow: hidden; margin-top: 5px; color: var(--ink-kitty); font: normal 6.5px/9px var(--font-mono); letter-spacing: .3px; text-overflow: ellipsis; white-space: nowrap; }
+.torn-note textarea { height: 44px; padding: 0; resize: none; overflow-y: hidden; user-select: text; }
+.torn-note em { display: block; overflow: hidden; margin-top: 9px; padding-top: 7px; border-top: 1px solid rgb(190 145 153 / 18%); color: var(--ink-kitty); font: normal 6.5px/9px var(--font-mono); letter-spacing: .3px; opacity: .78; text-overflow: ellipsis; white-space: nowrap; }
 .torn-note.author-master em { color: var(--ink-master); }
 .note-tape { position: absolute; top: -11px; left: 61px; width: 52px; height: 25px; background: url("/assets/gingham-tape-short.png") center / 100% 100% no-repeat; transform: rotate(6deg); }
 .author-master .note-tape { left: -14px; filter: hue-rotate(183deg) saturate(.78) brightness(1.04); transform: rotate(-19deg); }

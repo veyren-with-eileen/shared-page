@@ -20,9 +20,10 @@ interface TornNoteProps {
   onPointerUp(event: PointerEvent): void;
   onPointerCancel(event: PointerEvent): void;
   onFocusRequest(): void;
+  onFocusChange(focused: boolean): void;
 }
 
-export function TornNote({ note, index, linkedTitle, active, dragging, offsetY, onText, onDelete, onDoubleTap, onPointerDown, onPointerMove, onPointerUp, onPointerCancel, onFocusRequest }: TornNoteProps) {
+export function TornNote({ note, index, linkedTitle, active, dragging, offsetY, onText, onDelete, onDoubleTap, onPointerDown, onPointerMove, onPointerUp, onPointerCancel, onFocusRequest, onFocusChange }: TornNoteProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   function resizeTextarea(textarea: HTMLTextAreaElement) {
@@ -46,8 +47,29 @@ export function TornNote({ note, index, linkedTitle, active, dragging, offsetY, 
     onFocusRequest();
   }, [active]);
 
+  useLayoutEffect(() => {
+    const textarea = textareaRef.current;
+    if (!active || !textarea) return;
+    const resizeForEnvironment = () => {
+      resizeTextarea(textarea);
+      onFocusRequest();
+    };
+    const fonts = document.fonts;
+    let disposed = false;
+    void fonts?.ready.then(() => {
+      if (!disposed) resizeForEnvironment();
+    });
+    fonts?.addEventListener?.("loadingdone", resizeForEnvironment);
+    window.addEventListener("resize", resizeForEnvironment);
+    return () => {
+      disposed = true;
+      fonts?.removeEventListener?.("loadingdone", resizeForEnvironment);
+      window.removeEventListener("resize", resizeForEnvironment);
+    };
+  }, [active]);
+
   return <article
-    class={`torn-note author-${note.author} ${active || dragging ? "is-lifted" : ""}`}
+    class={`torn-note author-${note.author} ${linkedTitle ? "has-linked-event" : ""} ${active || dragging ? "is-lifted" : ""}`}
     style={{ transform: `translateY(${offsetY}px) rotate(${active || dragging ? 0 : index % 2 ? 1.6 : -2.2}deg)` }}
     onClick={(event) => { if (note.author === "master" && event.detail === 2) onDoubleTap(); }}
     onPointerDown={onPointerDown}
@@ -62,11 +84,14 @@ export function TornNote({ note, index, linkedTitle, active, dragging, offsetY, 
           ref={textareaRef}
           value={note.body}
           maxLength={NOTE_BODY_MAX_LENGTH}
+          rows={1}
           aria-label="Note text"
-          onFocus={onFocusRequest}
+          onFocus={() => { onFocusChange(true); onFocusRequest(); }}
+          onBlur={() => onFocusChange(false)}
           onInput={(event) => {
             resizeTextarea(event.currentTarget);
             onText(event.currentTarget.value);
+            onFocusRequest();
           }}
         />
       : <p>{note.body || " "}</p>}

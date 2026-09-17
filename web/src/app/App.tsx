@@ -78,12 +78,18 @@ export function App() {
   }, [pageSync]);
 
   useEffect(() => {
+    const calendarRoute = !editingConnection;
+    const dayRoute = calendarRoute && route.kind === "day";
     document.documentElement.classList.toggle(
       "is-calendar-route",
-      !editingConnection
+      calendarRoute
     );
-    return () => document.documentElement.classList.remove("is-calendar-route");
-  }, [editingConnection]);
+    document.documentElement.classList.toggle("is-day-route", dayRoute);
+    return () => {
+      document.documentElement.classList.remove("is-calendar-route");
+      document.documentElement.classList.remove("is-day-route");
+    };
+  }, [editingConnection, route.kind]);
 
   useEffect(() => {
     const surface = appSurfaceRef.current;

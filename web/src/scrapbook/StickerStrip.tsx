@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "preact/hooks";
+import { createPortal } from "preact/compat";
 import { firstGrapheme, pointInRect, stickerBaseSize, stripGestureIntent, type Point, type StickerLibraryItem } from "../domain/scrapbook";
 import { processCustomSticker } from "./imageProcessing";
 import type { ScrapbookStore } from "../state/scrapbookStore";
+import { stickerDragCompletion, stickerPreviewTransform, type StickerDragIntent } from "./stickerPicker";
 import "./scrapbook.css";
 
 const CELL = 48;
@@ -23,7 +25,8 @@ interface DragState {
   start: Point;
   current: Point;
   startScroll: number;
-  intent: "undecided" | "scroll" | "lift";
+  intent: StickerDragIntent;
+  scale: number;
   deleteTimer?: number;
 }
 
@@ -32,8 +35,9 @@ export function StickerStrip({ store, stickers, open, onDrop, onPickEmoji }: Sti
   const importRef = useRef<HTMLInputElement>(null);
   const emojiRef = useRef<HTMLInputElement>(null);
   const drag = useRef<DragState | null>(null);
+  const previewFrame = useRef(0);
   const [scrollX, setScrollX] = useState(0);
-  const [lifted, setLifted] = useState<{ item: StickerLibraryItem; point: Point } | null>(null);
+  const [lifted, setLifted] = useState<{ item: StickerLibraryItem; point: Point; scale: number } | null>(null);
   const [markedId, setMarkedId] = useState<string | null>(null);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -42,11 +46,17 @@ export function StickerStrip({ store, stickers, open, onDrop, onPickEmoji }: Sti
 
   useEffect(() => {
     if (!open) {
+      if (drag.current?.deleteTimer) window.clearTimeout(drag.current.deleteTimer);
+      drag.current = null;
+      window.cancelAnimationFrame(previewFrame.current);
+      previewFrame.current = 0;
       setEmojiOpen(false);
       setMarkedId(null);
       setLifted(null);
     }
   }, [open]);
+
+  useEffect(() => () => window.cancelAnimationFrame(previewFrame.current), []);
 
   useEffect(() => setScrollX((value) => Math.max(minScroll, value)), [minScroll]);
 
@@ -75,13 +85,15 @@ export function StickerStrip({ store, stickers, open, onDrop, onPickEmoji }: Sti
     if (event.button !== 0) return;
     const target = event.currentTarget as HTMLElement;
     target.setPointerCapture(event.pointerId);
+    const stripWidth = stripRef.current?.getBoundingClientRect().width ?? STRIP_WIDTH;
     const state: DragState = {
       item,
       pointerId: event.pointerId,
       start: { x: event.clientX, y: event.clientY },
       current: { x: event.clientX, y: event.clientY },
       startScroll: scrollX,
-      intent: "undecided"
+      intent: "undecided",
+      scale: stripWidth / STRIP_WIDTH
     };
     if (!item.builtIn) {
       state.deleteTimer = window.setTimeout(() => {
@@ -89,6 +101,21 @@ export function StickerStrip({ store, stickers, open, onDrop, onPickEmoji }: Sti
       }, 320);
     }
     drag.current = state;
+  }
+
+  function schedulePreview(state: DragState) {
+    if (previewFrame.current) return;
+    previewFrame.current = window.requestAnimationFrame(() => {
+      previewFrame.current = 0;
+      if (drag.current !== state || state.intent !== "lift") return;
+      setLifted({ item: state.item, point: { ...state.current }, scale: state.scale });
+    });
+  }
+
+  function clearPreview() {
+    window.cancelAnimationFrame(previewFrame.current);
+    previewFrame.current = 0;
+    setLifted(null);
   }
 
   function pointerMove(event: PointerEvent) {
@@ -99,7 +126,7 @@ export function StickerStrip({ store, stickers, open, onDrop, onPickEmoji }: Sti
     if (state.intent === "undecided") {
       state.intent = stripGestureIntent(dx, dy);
       if (state.intent !== "undecided" && state.deleteTimer) window.clearTimeout(state.deleteTimer);
-      if (state.intent === "lift") setLifted({ item: state.item, point: { x: event.clientX, y: event.clientY } });
+      if (state.intent === "lift") schedulePreview(state);
       if (state.intent !== "undecided") setMarkedId(null);
     }
     if (state.intent === "scroll") {
@@ -111,7 +138,7 @@ export function StickerStrip({ store, stickers, open, onDrop, onPickEmoji }: Sti
     if (state.intent === "lift") {
       event.preventDefault();
       state.current = { x: event.clientX, y: event.clientY };
-      setLifted({ item: state.item, point: state.current });
+      schedulePreview(state);
     }
   }
 
@@ -120,23 +147,15 @@ export function StickerStrip({ store, stickers, open, onDrop, onPickEmoji }: Sti
     if (!state || state.pointerId !== event.pointerId) return;
     if (state.deleteTimer) window.clearTimeout(state.deleteTimer);
     drag.current = null;
-    if (!cancelled && state.intent === "lift") {
-      const rect = stripRef.current?.getBoundingClientRect();
-      const inside = rect && pointInRect(
+    const rect = stripRef.current?.getBoundingClientRect();
+    const inside = Boolean(rect && pointInRect(
         { x: event.clientX, y: event.clientY },
         { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
-      );
-      if (!inside) void onDrop(state.item, { x: event.clientX, y: event.clientY });
-    }
-    setLifted(null);
+      ));
+    const completion = stickerDragCompletion(state.intent, cancelled, inside);
+    clearPreview();
+    if (completion === "drop") void onDrop(state.item, { x: event.clientX, y: event.clientY });
   }
-
-  const stripRect = stripRef.current?.getBoundingClientRect();
-  const scale = stripRect ? stripRect.width / STRIP_WIDTH : 1;
-  const floatingPoint = lifted && stripRect ? {
-    x: (lifted.point.x - stripRect.left) / scale,
-    y: (lifted.point.y - stripRect.top) / scale
-  } : null;
 
   return <div class={open ? "sticker-strip is-open" : "sticker-strip"} ref={stripRef}>
     <div class="sticker-strip-window">
@@ -147,7 +166,7 @@ export function StickerStrip({ store, stickers, open, onDrop, onPickEmoji }: Sti
         <button class="sticker-emoji-cell" type="button" aria-label="Choose emoji" onClick={() => { setEmojiOpen((value) => !value); window.setTimeout(() => emojiRef.current?.focus(), 0); }}>😀</button>
         {stickers.map((item, index) => {
           const source = store.stickerUrl(item);
-          return <span class="sticker-strip-item" style={{ transform: `rotate(${index % 2 ? -3 : 2.5}deg)` }} key={item.id}>
+          return <span class={`sticker-strip-item ${lifted?.item.id === item.id ? "is-drag-source" : ""}`} style={{ transform: `rotate(${index % 2 ? -3 : 2.5}deg)` }} key={item.id}>
             {source && <img src={source} alt="" draggable={false} />}
             <button
               class="sticker-drag-target"
@@ -170,10 +189,17 @@ export function StickerStrip({ store, stickers, open, onDrop, onPickEmoji }: Sti
       <input ref={emojiRef} aria-label="Type one emoji" placeholder="輸入一個 emoji" onInput={(event) => chooseEmoji(event.currentTarget.value)} />
     </div>}
     <input ref={importRef} class="scrapbook-file-input" type="file" accept="image/png,image/webp,image/jpeg" onChange={(event) => void importSticker(event.currentTarget.files?.[0])} />
-    {lifted && floatingPoint && (() => {
+    {lifted && typeof document !== "undefined" && (() => {
       const source = store.stickerUrl(lifted.item);
       const size = stickerBaseSize(lifted.item);
-      return source && <img class="lifted-sticker" src={source} alt="" style={{ left: `${floatingPoint.x - size.x / 2}px`, top: `${floatingPoint.y - size.y / 2}px`, width: `${size.x}px`, height: `${size.y}px` }} />;
+      const width = size.x * lifted.scale;
+      const height = size.y * lifted.scale;
+      return source && createPortal(
+        <div class="sticker-drag-layer" aria-hidden="true">
+          <img class="lifted-sticker" src={source} alt="" style={{ width: `${width}px`, height: `${height}px`, transform: stickerPreviewTransform(lifted.point.x, lifted.point.y, width, height) }} />
+        </div>,
+        document.body
+      );
     })()}
   </div>;
 }

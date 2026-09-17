@@ -206,6 +206,10 @@
   pointer-events: none;
 }
 
+.sticker-strip-item.is-drag-source > img {
+  opacity: 0;
+}
+
 .sticker-drag-target {
   position: absolute;
   z-index: 1;
@@ -234,13 +238,25 @@
   font: 700 12px/1 system-ui, sans-serif;
 }
 
+.sticker-drag-layer {
+  position: fixed;
+  z-index: 200;
+  inset: 0;
+  overflow: visible;
+  contain: layout style;
+  pointer-events: none;
+}
+
 .lifted-sticker {
   position: absolute;
-  z-index: 50;
+  top: 0;
+  left: 0;
   object-fit: contain;
   filter: drop-shadow(3px 7px 8px rgb(150 120 125 / 42%));
   pointer-events: none;
-  transform: rotate(-4deg) scale(1.06);
+  transform-origin: center;
+  backface-visibility: hidden;
+  will-change: transform;
 }
 
 .emoji-picker {
