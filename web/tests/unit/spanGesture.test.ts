@@ -4,7 +4,8 @@ import {
   beginSpanGesture,
   endSpanGesture,
   hitSpanBand,
-  moveSpanGesture
+  moveSpanGesture,
+  SpanGestureSession
 } from "../../src/month/spanGesture";
 
 describe("Month View span gesture", () => {
@@ -27,6 +28,28 @@ describe("Month View span gesture", () => {
     const armed = armSpanGesture(gesture);
     expect(armed.effect).toEqual({ type: "edit-span", id: "cal_span" });
     expect(endSpanGesture(armed.state, { x: 5, y: 20 })).toBeNull();
+  });
+
+  it("returns to idle when an editor consumes a long press, then accepts the next tap", () => {
+    const session = new SpanGestureSession();
+    expect(session.begin(beginSpanGesture(1, { x: 5, y: 20 }, "2026-09-15", 15, "cal_span"))).toBe(true);
+    expect(session.arm()?.effect).toEqual({ type: "edit-span", id: "cal_span" });
+    expect(session.cancel()).toBe(1);
+    expect(session.state).toBeNull();
+    expect(session.begin(beginSpanGesture(2, { x: 8, y: 8 }, "2026-09-16", 16, null))).toBe(true);
+    expect(session.finish({ x: 8, y: 8 })).toEqual({ type: "open-day", dayKey: "2026-09-16" });
+  });
+
+  it("survives repeated long-press edit/cancel cycles without retaining a handled gesture", () => {
+    const session = new SpanGestureSession();
+    for (let pointerId = 1; pointerId <= 5; pointerId += 1) {
+      expect(session.begin(beginSpanGesture(pointerId, { x: 5, y: 20 }, "2026-09-15", 15, "cal_span"))).toBe(true);
+      expect(session.arm()?.effect).toEqual({ type: "edit-span", id: "cal_span" });
+      session.cancel();
+      expect(session.state).toBeNull();
+    }
+    session.begin(beginSpanGesture(6, { x: 4, y: 4 }, "2026-10-01", 1, null));
+    expect(session.finish({ x: 4, y: 4 })).toEqual({ type: "open-day", dayKey: "2026-10-01" });
   });
 
   it("does not arm after scrolling-sized movement and matches only the first two band lanes", () => {
