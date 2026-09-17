@@ -12,6 +12,15 @@ body,
   margin: 0;
 }
 
+html.is-calendar-route,
+html.is-calendar-route body,
+html.is-calendar-route #app {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
 body {
   background: #fff;
   color: var(--ink-title);

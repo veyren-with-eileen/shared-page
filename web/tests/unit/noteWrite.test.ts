@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CalendarNote, DayEvent } from "../../src/domain/calendar";
-import { clampNoteY, createNotePayload, linkedTimedEventId } from "../../src/domain/noteWrite";
+import { NOTE_BODY_MAX_LENGTH, clampNoteY, createNotePayload, linkedTimedEventId, truncateNoteBody } from "../../src/domain/noteWrite";
 
 const note: CalendarNote = { id: "local_1", author: "kitty", body: " note ", timestamp: "now", liked: false, linkedEventId: null, y: 120, anchorDate: "2026-09-15" };
 const timed: DayEvent = { id: "cal_1", author: "kitty", title: "lunch", description: null, eventType: null, isAllDay: false, isSpan: false, originalStartsAt: "", originalEndsAt: "", startMinute: 600, endMinute: 660, continuesBefore: false, continuesAfter: false, spanIndex: null, spanLength: null, revision: 1 };
@@ -18,5 +18,9 @@ describe("note write and placement", () => {
   it("clamps placement inside the timeline", () => {
     expect(clampNoteY(-10, 1000)).toBe(0);
     expect(clampNoteY(990, 1000)).toBe(904);
+    expect(clampNoteY(990, 1000, 180)).toBe(820);
+  });
+  it("matches the existing 2000-character backend note limit", () => {
+    expect(truncateNoteBody("x".repeat(NOTE_BODY_MAX_LENGTH + 20))).toHaveLength(NOTE_BODY_MAX_LENGTH);
   });
 });

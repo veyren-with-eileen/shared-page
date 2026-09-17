@@ -102,7 +102,7 @@ export function DayPageSnapshot({ state, scrapbook }: { state: SnapshotDayState;
         {state.notes.map((note, index) => {
           const linkedTitle = note.linkedEventId ? state.payload.timed.find((event) => event.id === note.linkedEventId)?.title : undefined;
           return <div class="snapshot-note-position" style={{ left: `${note.author === "master" ? 58 : 214}px`, top: `${note.y ?? 34 + index * 116}px` }} key={note.id}>
-            <TornNote note={note} index={index} linkedTitle={linkedTitle} active={false} dragging={false} offsetY={0} onText={() => undefined} onDelete={() => undefined} onDoubleTap={() => undefined} onPointerDown={() => undefined} onPointerMove={() => undefined} onPointerUp={() => undefined} onPointerCancel={() => undefined} />
+            <TornNote note={note} index={index} linkedTitle={linkedTitle} active={false} dragging={false} offsetY={0} onText={() => undefined} onDelete={() => undefined} onDoubleTap={() => undefined} onPointerDown={() => undefined} onPointerMove={() => undefined} onPointerUp={() => undefined} onPointerCancel={() => undefined} onFocusRequest={() => undefined} />
           </div>;
         })}
         <StaticPlacedLayer store={scrapbook} items={state.placed} />

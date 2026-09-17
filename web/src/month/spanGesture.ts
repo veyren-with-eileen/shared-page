@@ -19,6 +19,46 @@ export type SpanGestureEffect =
   | { type: "new-span"; startDay: number; endDay: number }
   | { type: "open-day"; dayKey: string };
 
+export class SpanGestureSession {
+  private currentState: SpanGestureState | null = null;
+
+  get state(): SpanGestureState | null {
+    return this.currentState;
+  }
+
+  begin(state: SpanGestureState): boolean {
+    if (this.currentState) return false;
+    this.currentState = state;
+    return true;
+  }
+
+  move(point: GesturePoint, day: number | null): SpanGestureState | null {
+    if (!this.currentState) return null;
+    this.currentState = moveSpanGesture(this.currentState, point, day);
+    return this.currentState;
+  }
+
+  arm(): { state: SpanGestureState; effect: SpanGestureEffect | null } | null {
+    if (!this.currentState) return null;
+    const armed = armSpanGesture(this.currentState);
+    this.currentState = armed.state;
+    return armed;
+  }
+
+  finish(point: GesturePoint): SpanGestureEffect | null {
+    if (!this.currentState) return null;
+    const state = this.currentState;
+    this.currentState = null;
+    return endSpanGesture(state, point);
+  }
+
+  cancel(): number | null {
+    const pointerId = this.currentState?.pointerId ?? null;
+    this.currentState = null;
+    return pointerId;
+  }
+}
+
 function distance(a: GesturePoint, b: GesturePoint): number {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }

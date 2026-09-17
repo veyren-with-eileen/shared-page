@@ -11,7 +11,7 @@ import {
   spanCreatePayload,
   spanPatchPayload
 } from "../domain/spanWrite";
-import { createNotePayload, noteFromDTO, provisionalNote } from "../domain/noteWrite";
+import { createNotePayload, noteFromDTO, provisionalNote, truncateNoteBody } from "../domain/noteWrite";
 import { materializeDay } from "../domain/calendarDTO";
 import { NOOP_PAGE_DIRTY, eventRenderedDayKeys, markEventTransition, type PageDirtySink } from "../snapshot/pageDirty";
 
@@ -596,7 +596,7 @@ export class CalendarStore {
   setNoteText(id: string, body: string) {
     const before = this.note(id);
     if (!before || before.author !== "kitty") return;
-    const updated = { ...before, body: body.slice(0, 40) };
+    const updated = { ...before, body: truncateNoteBody(body) };
     this.replaceNote(id, updated);
     const oldTimer = this.noteTextTimers.get(id);
     if (oldTimer !== undefined) globalThis.clearTimeout(oldTimer);

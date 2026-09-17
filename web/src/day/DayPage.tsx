@@ -8,12 +8,14 @@ import { CanvasViewport } from "../app/CanvasViewport";
 import { EventEditor } from "../editors/EventEditor";
 import { SpanEditor } from "../editors/SpanEditor";
 import { TornNote } from "../notes/TornNote";
+import { scrollTopForVisibleItem } from "../notes/noteLayout";
 import { clampNoteY, linkedTimedEventId } from "../domain/noteWrite";
 import { canonicalTimelinePoint } from "../domain/scrapbook";
 import type { ScrapbookStore } from "../state/scrapbookStore";
 import { useScrapbook } from "../state/useScrapbook";
 import { PlacedLayer } from "../scrapbook/PlacedLayer";
 import { StickerStrip } from "../scrapbook/StickerStrip";
+import { nextStickerPickerOpen } from "../scrapbook/stickerPicker";
 import { processPhoto } from "../scrapbook/imageProcessing";
 import "./day.css";
 
@@ -120,6 +122,7 @@ export function DayPage({ store, scrapbook, dateKey, onBack, onDayChange }: DayP
   const [stickerOpen, setStickerOpen] = useState(false);
   const [photoBusy, setPhotoBusy] = useState(false);
   const timelineRef = useRef<HTMLElement>(null);
+  const activeNotePositionRef = useRef<HTMLDivElement>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const noteGesture = useRef<{ id: string; pointerId: number; startY: number; originOffset: number; armed: boolean; timer?: number } | null>(null);
   const today = currentProductDay() === dateKey;
@@ -142,6 +145,42 @@ export function DayPage({ store, scrapbook, dateKey, onBack, onDayChange }: DayP
     setStickerOpen(false);
     void store.markSeen(dateKey);
   }, [store, dateKey]);
+
+  function keepActiveNoteVisible() {
+    const timeline = timelineRef.current;
+    const position = activeNotePositionRef.current;
+    const noteElement = position?.querySelector<HTMLElement>(".torn-note");
+    if (!timeline || !position || !noteElement) return;
+    timeline.scrollTop = scrollTopForVisibleItem(
+      timeline.scrollTop,
+      timeline.clientHeight,
+      timeline.scrollHeight,
+      position.offsetTop + activeNoteOffset,
+      noteElement.offsetHeight
+    );
+  }
+
+  useEffect(() => {
+    if (!activeNoteId) return;
+    const timeline = timelineRef.current;
+    if (!timeline) return;
+    let frame = 0;
+    const scheduleVisibilityCheck = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(keepActiveNoteVisible);
+    };
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleVisibilityCheck);
+    observer?.observe(timeline);
+    window.visualViewport?.addEventListener("resize", scheduleVisibilityCheck);
+    window.addEventListener("resize", scheduleVisibilityCheck);
+    scheduleVisibilityCheck();
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer?.disconnect();
+      window.visualViewport?.removeEventListener("resize", scheduleVisibilityCheck);
+      window.removeEventListener("resize", scheduleVisibilityCheck);
+    };
+  }, [activeNoteId]);
 
   function beginEdit(event: DayEvent) {
     const dto = store.event(event.id);
@@ -179,7 +218,8 @@ export function DayPage({ store, scrapbook, dateKey, onBack, onDayChange }: DayP
     const note = index >= 0 ? notes[index] : null;
     if (note) {
       if (activeNoteOffset !== 0) {
-        const y = clampNoteY(noteBaseY(note, index) + activeNoteOffset, TIMELINE_HEIGHT);
+        const noteHeight = activeNotePositionRef.current?.querySelector<HTMLElement>(".torn-note")?.offsetHeight;
+        const y = clampNoteY(noteBaseY(note, index) + activeNoteOffset, TIMELINE_HEIGHT, noteHeight);
         const linked = linkedTimedEventId(y + 42, visibleTimed, eventTop, eventHeight);
         store.placeNote(note.id, y, linked);
       }
@@ -203,13 +243,16 @@ export function DayPage({ store, scrapbook, dateKey, onBack, onDayChange }: DayP
     return { x: 201, y: (timeline?.scrollTop ?? 0) + (timeline?.clientHeight ?? 400) / 2 };
   }
 
-  function dropSticker(stickerId: string, clientX: number, clientY: number) {
+  async function dropSticker(stickerId: string, clientX: number, clientY: number): Promise<boolean> {
     const timeline = timelineRef.current;
-    if (!timeline) return;
+    if (!timeline) return false;
     const rect = timeline.getBoundingClientRect();
-    if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return;
+    if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return false;
     const point = canonicalTimelinePoint({ x: clientX, y: clientY }, rect, timeline.scrollTop);
-    if (point) void scrapbook.placeSticker(dateKey, stickerId, point);
+    if (!point) return false;
+    const placedItem = await scrapbook.placeSticker(dateKey, stickerId, point);
+    setStickerOpen((open) => nextStickerPickerOpen(open, placedItem ? "accepted-drop" : "rejected-drop"));
+    return Boolean(placedItem);
   }
 
   async function importPhoto(file?: File) {
@@ -302,7 +345,8 @@ export function DayPage({ store, scrapbook, dateKey, onBack, onDayChange }: DayP
             {visibleTimed.map((event) => <button type="button" class={`timed-event ${authorClass(event.author)} ${store.isPending(event.id) ? "is-pending" : ""}`} style={eventStyle(event)} key={`${event.id}-${event.startMinute}`} onClick={() => setSelectedEvent(event)}><strong>{event.title}</strong><span>{eventTimeLabel(event)} · {AUTHOR_LABEL[event.author]}</span></button>)}
             {notes.map((note, index) => {
               const linkedTitle = note.linkedEventId ? payload.timed.find((event) => event.id === note.linkedEventId)?.title : undefined;
-              return <div class="note-position" style={{ left: `${note.author === "master" ? 58 : 214}px`, top: `${noteBaseY(note, index)}px` }} key={note.id}><TornNote note={note} index={index} linkedTitle={linkedTitle} active={activeNoteId === note.id} dragging={draggingNoteId === note.id} offsetY={activeNoteId === note.id ? activeNoteOffset : 0} onText={(body) => store.setNoteText(note.id, body)} onDelete={() => { setActiveNoteId(null); setActiveNoteOffset(0); void store.deleteNote(note.id); }} onDoubleTap={() => void store.toggleNoteLike(note.id)} onPointerDown={(event) => notePointerDown(note, event)} onPointerMove={notePointerMove} onPointerUp={endNotePointer} onPointerCancel={endNotePointer} /></div>;
+              const active = activeNoteId === note.id;
+              return <div ref={active ? activeNotePositionRef : undefined} class="note-position" style={{ left: `${note.author === "master" ? 58 : 214}px`, top: `${noteBaseY(note, index)}px` }} key={note.id}><TornNote note={note} index={index} linkedTitle={linkedTitle} active={active} dragging={draggingNoteId === note.id} offsetY={active ? activeNoteOffset : 0} onText={(body) => store.setNoteText(note.id, body)} onDelete={() => { setActiveNoteId(null); setActiveNoteOffset(0); void store.deleteNote(note.id); }} onDoubleTap={() => void store.toggleNoteLike(note.id)} onPointerDown={(event) => notePointerDown(note, event)} onPointerMove={notePointerMove} onPointerUp={endNotePointer} onPointerCancel={endNotePointer} onFocusRequest={keepActiveNoteVisible} /></div>;
             })}
             <PlacedLayer
               store={scrapbook}
@@ -318,6 +362,29 @@ export function DayPage({ store, scrapbook, dateKey, onBack, onDayChange }: DayP
         </section>
 
         <div class={fabOpen ? "event-fab is-open" : "event-fab"}>
+          {stickerOpen && <div
+            class="sticker-dismiss-layer"
+            role="presentation"
+            onPointerDown={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              event.currentTarget.setPointerCapture(event.pointerId);
+            }}
+            onPointerUp={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              setStickerOpen((open) => nextStickerPickerOpen(open, "outside-dismiss"));
+            }}
+            onPointerCancel={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              setStickerOpen((open) => nextStickerPickerOpen(open, "outside-dismiss"));
+            }}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+          />}
           {fabOpen && <button class="event-fab-action note-fab-action" type="button" aria-label="New note" onClick={startBlankNote}><img src="/assets/ic-note.png" alt="" aria-hidden="true" /></button>}
           {fabOpen && <div class="event-fab-row sticker-fab-row">
             <StickerStrip
@@ -327,7 +394,7 @@ export function DayPage({ store, scrapbook, dateKey, onBack, onDayChange }: DayP
               onDrop={(item, point) => dropSticker(item.id, point.x, point.y)}
               onPickEmoji={(emoji) => void scrapbook.placeEmoji(dateKey, emoji, timelineCenter())}
             />
-            <button class="event-fab-action" type="button" aria-label="Stickers" aria-expanded={stickerOpen} onClick={() => setStickerOpen((open) => !open)}><img src="/assets/ic-sticker.png" alt="" aria-hidden="true" /></button>
+            <button class="event-fab-action" type="button" aria-label="Stickers" aria-expanded={stickerOpen} onClick={() => setStickerOpen((open) => nextStickerPickerOpen(open, "toggle"))}><img src="/assets/ic-sticker.png" alt="" aria-hidden="true" /></button>
           </div>}
           {fabOpen && <button class="event-fab-action" type="button" aria-label="Add photo" onClick={() => photoInputRef.current?.click()}>{photoBusy ? <span class="fab-progress">…</span> : <img src="/assets/ic-photo.png" alt="" aria-hidden="true" />}</button>}
           {fabOpen && <button class="event-fab-action" type="button" aria-label="New event" onClick={() => { setEditorEvent(null); setFabOpen(false); }}><img src="/assets/ic-event.png" alt="" aria-hidden="true" /></button>}

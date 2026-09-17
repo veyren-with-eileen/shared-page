@@ -1,5 +1,4 @@
 import {
-  AUTHOR_LABEL,
   SPECIAL_DAY_TYPES,
   type Author,
   type CalendarMonth,
@@ -7,7 +6,7 @@ import {
   type DayRange,
   type MonthPayload
 } from "../domain/calendar";
-import { useRef, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import {
   WEEKDAY_HEADERS,
   dayKey,
@@ -26,14 +25,12 @@ import type { ScrapbookStore } from "../state/scrapbookStore";
 import { useScrapbook } from "../state/useScrapbook";
 import { PlacedThumbs } from "../scrapbook/PlacedLayer";
 import {
-  armSpanGesture,
   beginSpanGesture,
-  endSpanGesture,
   hitSpanBand,
-  moveSpanGesture,
+  SpanGestureSession,
   type SpanGestureEffect,
-  type SpanGestureState
 } from "./spanGesture";
+import { DISPLAY_NAME } from "../theme/identity";
 import "./month.css";
 
 interface MonthPageProps {
@@ -64,7 +61,7 @@ export function MonthPage({ store, scrapbook, month, onMonthChange, onDayOpen }:
   const today = todayInMonth(month);
   const days = monthGrid(month);
   const gridRef = useRef<HTMLDivElement>(null);
-  const gestureRef = useRef<SpanGestureState | null>(null);
+  const gestureRef = useRef(new SpanGestureSession());
   const armTimerRef = useRef<number | null>(null);
   const [preview, setPreview] = useState<{ start: number; end: number } | null>(null);
   const [spanSheet, setSpanSheet] = useState<{ start: number; end: number; editing?: CalendarSpan } | null>(null);
@@ -92,47 +89,85 @@ export function MonthPage({ store, scrapbook, month, onMonthChange, onDayOpen }:
     }
   }
 
-  function clearGesture() {
-    if (armTimerRef.current !== null) window.clearTimeout(armTimerRef.current);
-    armTimerRef.current = null;
-    gestureRef.current = null;
-    setPreview(null);
+  function releasePointerCapture(pointerId: number | null) {
+    const grid = gridRef.current;
+    if (pointerId === null || !grid) return;
+    try {
+      if (grid.hasPointerCapture(pointerId)) grid.releasePointerCapture(pointerId);
+    } catch {
+      // Safari can report a stale capture after pointercancel/lostpointercapture.
+    }
   }
 
+  function clearGesture(pointerId?: number | null, updatePreview = true) {
+    const activePointerId = gestureRef.current.cancel();
+    if (armTimerRef.current !== null) window.clearTimeout(armTimerRef.current);
+    armTimerRef.current = null;
+    releasePointerCapture(pointerId ?? activePointerId);
+    if (updatePreview) setPreview(null);
+  }
+
+  useEffect(() => {
+    clearGesture();
+    setSpanSheet(null);
+    return () => clearGesture(undefined, false);
+  }, [month.year, month.month]);
+
   function pointerDown(event: PointerEvent) {
-    if (event.button !== 0 || gestureRef.current) return;
+    if (event.button !== 0 || gestureRef.current.state) return;
     const hit = pointDay(event.clientX, event.clientY);
     if (!hit) return;
     event.preventDefault();
-    gridRef.current?.setPointerCapture(event.pointerId);
     const bandId = hit.day === null ? null : hitSpanBand(payload.spans, hit.day, hit.inCellY);
-    gestureRef.current = beginSpanGesture(event.pointerId, { x: event.clientX, y: event.clientY }, hit.cell.key, hit.day, bandId);
+    gestureRef.current.begin(beginSpanGesture(event.pointerId, { x: event.clientX, y: event.clientY }, hit.cell.key, hit.day, bandId));
+    try {
+      gridRef.current?.setPointerCapture(event.pointerId);
+    } catch {
+      // Pointer capture is an enhancement; the active session still ends normally.
+    }
     if (hit.day !== null) {
       armTimerRef.current = window.setTimeout(() => {
-        const current = gestureRef.current;
-        if (!current) return;
-        const armed = armSpanGesture(current);
-        gestureRef.current = armed.state;
+        armTimerRef.current = null;
+        const armed = gestureRef.current.arm();
+        if (!armed) return;
         if (armed.state.pickFrom !== null) setPreview({ start: armed.state.pickFrom, end: armed.state.pickTo ?? armed.state.pickFrom });
+        if (armed.effect) clearGesture(armed.state.pointerId);
         runGestureEffect(armed.effect);
       }, 300);
     }
   }
 
   function pointerMove(event: PointerEvent) {
-    const current = gestureRef.current;
+    const current = gestureRef.current.state;
     if (!current || current.pointerId !== event.pointerId) return;
     const hit = pointDay(event.clientX, event.clientY);
-    const moved = moveSpanGesture(current, { x: event.clientX, y: event.clientY }, hit?.day ?? null);
-    gestureRef.current = moved;
+    const moved = gestureRef.current.move({ x: event.clientX, y: event.clientY }, hit?.day ?? null);
+    if (!moved) return;
     if (moved.pickFrom !== null && moved.pickTo !== null) setPreview({ start: Math.min(moved.pickFrom, moved.pickTo), end: Math.max(moved.pickFrom, moved.pickTo) });
   }
 
   function pointerUp(event: PointerEvent) {
-    const current = gestureRef.current;
+    const current = gestureRef.current.state;
     if (!current || current.pointerId !== event.pointerId) return;
-    runGestureEffect(endSpanGesture(current, { x: event.clientX, y: event.clientY }));
+    const effect = gestureRef.current.finish({ x: event.clientX, y: event.clientY });
+    clearGesture(current.pointerId);
+    runGestureEffect(effect);
+  }
+
+  function cancelPointer(event: PointerEvent) {
+    if (gestureRef.current.state?.pointerId !== event.pointerId) return;
+    clearGesture(event.pointerId);
+  }
+
+  function changeMonth(next: CalendarMonth) {
     clearGesture();
+    setSpanSheet(null);
+    onMonthChange(next);
+  }
+
+  function closeSpanEditor() {
+    clearGesture();
+    setSpanSheet(null);
   }
 
   return (
@@ -155,10 +190,10 @@ export function MonthPage({ store, scrapbook, month, onMonthChange, onDayOpen }:
           </div>
 
           <nav class="month-nav" aria-label="Month navigation">
-            <button type="button" aria-label="Previous month" onClick={() => onMonthChange(previousMonth(month))}>
+            <button type="button" aria-label="Previous month" onClick={() => changeMonth(previousMonth(month))}>
               ◀
             </button>
-            <button type="button" aria-label="Next month" onClick={() => onMonthChange(nextMonth(month))}>
+            <button type="button" aria-label="Next month" onClick={() => changeMonth(nextMonth(month))}>
               ▶
             </button>
           </nav>
@@ -178,7 +213,8 @@ export function MonthPage({ store, scrapbook, month, onMonthChange, onDayOpen }:
             onPointerDown={pointerDown}
             onPointerMove={pointerMove}
             onPointerUp={pointerUp}
-            onPointerCancel={clearGesture}
+            onPointerCancel={cancelPointer}
+            onLostPointerCapture={cancelPointer}
             onContextMenu={(event) => event.preventDefault()}
           >
             {days.map((cell) => {
@@ -267,7 +303,7 @@ export function MonthPage({ store, scrapbook, month, onMonthChange, onDayOpen }:
             {(["kitty", "master", "system"] as const).map((author) => (
               <span class="legend-item" key={author}>
                 <i class={authorClass(author)} />
-                {AUTHOR_LABEL[author]}
+                {DISPLAY_NAME[author]}
               </span>
             ))}
             <span class="legend-spacer" />
@@ -292,13 +328,13 @@ export function MonthPage({ store, scrapbook, month, onMonthChange, onDayOpen }:
           start={spanSheet.start}
           end={spanSheet.end}
           editing={spanSheet.editing}
-          onClose={() => setSpanSheet(null)}
+          onClose={closeSpanEditor}
           onSave={(draft) => {
             if (spanSheet.editing) void store.updateSpan(spanSheet.editing, draft);
             else void store.createSpan(draft);
-            setSpanSheet(null);
+            closeSpanEditor();
           }}
-          onDelete={spanSheet.editing ? () => { void store.deleteSpan(spanSheet.editing!); setSpanSheet(null); } : undefined}
+          onDelete={spanSheet.editing ? () => { void store.deleteSpan(spanSheet.editing!); closeSpanEditor(); } : undefined}
         />}
       </main>
     </CanvasViewport>

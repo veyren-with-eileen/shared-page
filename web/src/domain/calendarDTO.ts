@@ -21,6 +21,7 @@ import {
   productDayRange,
   productDaySerial
 } from "./calendarTime";
+import { truncateNoteBody } from "./noteWrite";
 
 function nullableString(value: unknown): string | null {
   return typeof value === "string" ? value : null;
@@ -123,7 +124,7 @@ export function materializeNotes(dtos: NoteDTO[], month: CalendarMonth): Map<num
     const day = Number(parsed[1]);
     if (day < 1 || day > daysInMonth(month)) continue;
     const note: CalendarNote = {
-      id: dto.id, author: authorFromWire(dto.author), body: dto.body.slice(0, 40),
+      id: dto.id, author: authorFromWire(dto.author), body: truncateNoteBody(dto.body),
       timestamp: noteStamp(dto.createdAt), liked: dto.liked, linkedEventId: dto.eventId,
       y: dto.y, anchorDate: dto.anchorDate
     };

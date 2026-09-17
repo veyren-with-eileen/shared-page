@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { createCalendarGateway, uploadCalendarPage } from "../api/calendarAPI";
 import {
   clearSessionConnection,
@@ -15,12 +15,14 @@ import { ScrapbookStore } from "../state/scrapbookStore";
 import { PageSync } from "../snapshot/pageSync";
 import { renderCalendarPage } from "../snapshot/renderPage";
 import { ConnectionSetup } from "./ConnectionSetup";
+import { showsConnectionControl } from "./appPresentation";
 import {
   dayRouteUrl,
   monthRouteUrl,
   routeFromUrl,
   type AppRoute
 } from "./navigation";
+import { installAppPinchGuard } from "./pinchGuard";
 import "./app.css";
 
 interface NavigationState {
@@ -34,6 +36,7 @@ function currentNavigationState(): NavigationState {
 }
 
 export function App() {
+  const appSurfaceRef = useRef<HTMLDivElement>(null);
   const [connection, setConnection] = useState<ConnectionConfig>(loadConnection);
   const [editingConnection, setEditingConnection] = useState(!connection.token);
   const [route, setRoute] = useState<AppRoute>(() => routeFromUrl(new URL(window.location.href)));
@@ -73,6 +76,20 @@ export function App() {
     window.addEventListener("popstate", restore);
     return () => window.removeEventListener("popstate", restore);
   }, [pageSync]);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle(
+      "is-calendar-route",
+      !editingConnection
+    );
+    return () => document.documentElement.classList.remove("is-calendar-route");
+  }, [editingConnection]);
+
+  useEffect(() => {
+    const surface = appSurfaceRef.current;
+    if (!surface) return;
+    return installAppPinchGuard(surface);
+  }, [editingConnection]);
 
   function pushRoute(next: AppRoute, url: string, monthIndex?: number) {
     const current = currentNavigationState();
@@ -128,36 +145,42 @@ export function App() {
   }
 
   return (
-    <div class="app-shell">
+    <div ref={appSurfaceRef} class={`app-shell is-${route.kind}`}>
       {route.kind === "month" ? (
-        <MonthPage
-          store={calendar}
-          scrapbook={scrapbook}
-          month={route.month}
-          onMonthChange={(month) =>
-            pushRoute({ kind: "month", month }, monthRouteUrl(month))
-          }
-          onDayOpen={openDay}
-        />
+        <div class="month-viewport-stage">
+          <MonthPage
+            store={calendar}
+            scrapbook={scrapbook}
+            month={route.month}
+            onMonthChange={(month) =>
+              pushRoute({ kind: "month", month }, monthRouteUrl(month))
+            }
+            onDayOpen={openDay}
+          />
+        </div>
       ) : (
-        <DayPage
-          store={calendar}
-          scrapbook={scrapbook}
-          dateKey={route.dayKey}
-          onBack={backToMonth}
-          onDayChange={changeDay}
-        />
+        <div class="day-viewport-stage">
+          <DayPage
+            store={calendar}
+            scrapbook={scrapbook}
+            dateKey={route.dayKey}
+            onBack={backToMonth}
+            onDayChange={changeDay}
+          />
+        </div>
       )}
-      <button
-        class="connection-link"
-        type="button"
-        onClick={() => {
-          clearSessionConnection();
-          setEditingConnection(true);
-        }}
-      >
-        connection · {monthKey(route.month)}
-      </button>
+      {showsConnectionControl(route.kind) && (
+        <button
+          class="connection-link"
+          type="button"
+          onClick={() => {
+            clearSessionConnection();
+            setEditingConnection(true);
+          }}
+        >
+          connection · {monthKey(route.month)}
+        </button>
+      )}
     </div>
   );
 }

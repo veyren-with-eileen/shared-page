@@ -25,4 +25,9 @@ describe("note DTO materialization", () => {
     const result = materializeNotes(parseNoteList({ notes: [note({ id: "low", y: 200 }), note({ id: "high", y: 40 })] }), september);
     expect(result.get(15)?.map((n) => n.id)).toEqual(["high", "low"]);
   });
+  it("preserves note text beyond the old 40-character presentation limit", () => {
+    const body = "long note ".repeat(12);
+    const result = materializeNotes(parseNoteList({ notes: [note({ body })] }), september);
+    expect(result.get(15)?.[0].body).toBe(body);
+  });
 });

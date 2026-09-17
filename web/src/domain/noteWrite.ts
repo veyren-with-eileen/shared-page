@@ -3,6 +3,11 @@ import { productDateParts } from "./calendarTime";
 
 export const NOTE_WIDTH = 174;
 export const NOTE_HEIGHT = 96;
+export const NOTE_BODY_MAX_LENGTH = 2000;
+
+export function truncateNoteBody(body: string): string {
+  return body.slice(0, NOTE_BODY_MAX_LENGTH);
+}
 
 export function provisionalNote(anchorDate: string, y: number): CalendarNote {
   return { id: `local_note_${crypto.randomUUID()}`, author: "kitty", body: "", timestamp: "now", liked: false, linkedEventId: null, y, anchorDate };
@@ -14,7 +19,7 @@ export function noteFromDTO(dto: NoteDTO): CalendarNote {
   return {
     id: dto.id,
     author: dto.author === "kitty" ? "kitty" : dto.author === "master" || dto.author === "assistant" ? "master" : "system",
-    body: dto.body.slice(0, 40),
+    body: truncateNoteBody(dto.body),
     timestamp: p ? `${String(p.month).padStart(2, "0")}-${String(p.day).padStart(2, "0")} ${String(p.hour).padStart(2, "0")}:${String(p.minute).padStart(2, "0")}` : "now",
     liked: dto.liked,
     linkedEventId: dto.eventId,
@@ -33,6 +38,6 @@ export function linkedTimedEventId(centerY: number, timed: DayEvent[], eventTop:
   return timed.find((event) => !event.isAllDay && centerY >= eventTop(event) && centerY <= eventTop(event) + eventHeight(event))?.id ?? null;
 }
 
-export function clampNoteY(y: number, timelineHeight: number): number {
-  return Math.min(Math.max(0, y), timelineHeight - NOTE_HEIGHT);
+export function clampNoteY(y: number, timelineHeight: number, noteHeight = NOTE_HEIGHT): number {
+  return Math.min(Math.max(0, y), Math.max(0, timelineHeight - noteHeight));
 }
