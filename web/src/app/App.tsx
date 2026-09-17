@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { createCalendarGateway, uploadCalendarPage } from "../api/calendarAPI";
 import {
   clearSessionConnection,
@@ -21,6 +21,7 @@ import {
   routeFromUrl,
   type AppRoute
 } from "./navigation";
+import { installAppPinchGuard } from "./pinchGuard";
 import "./app.css";
 
 interface NavigationState {
@@ -34,6 +35,7 @@ function currentNavigationState(): NavigationState {
 }
 
 export function App() {
+  const appSurfaceRef = useRef<HTMLDivElement>(null);
   const [connection, setConnection] = useState<ConnectionConfig>(loadConnection);
   const [editingConnection, setEditingConnection] = useState(!connection.token);
   const [route, setRoute] = useState<AppRoute>(() => routeFromUrl(new URL(window.location.href)));
@@ -78,6 +80,12 @@ export function App() {
     document.documentElement.classList.toggle("is-month-route", route.kind === "month");
     return () => document.documentElement.classList.remove("is-month-route");
   }, [route.kind]);
+
+  useEffect(() => {
+    const surface = appSurfaceRef.current;
+    if (!surface) return;
+    return installAppPinchGuard(surface);
+  }, [editingConnection]);
 
   function pushRoute(next: AppRoute, url: string, monthIndex?: number) {
     const current = currentNavigationState();
@@ -133,7 +141,7 @@ export function App() {
   }
 
   return (
-    <div class={`app-shell is-${route.kind}`}>
+    <div ref={appSurfaceRef} class={`app-shell is-${route.kind}`}>
       {route.kind === "month" ? (
         <div class="month-viewport-stage">
           <MonthPage
