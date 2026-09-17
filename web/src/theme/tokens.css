@@ -45,9 +45,9 @@
   --font-mono: "Space Mono", monospace;
   --font-script: "Caveat", cursive;
   --font-body: "LXGW WenKai", system-ui, sans-serif;
-  --font-hand-kitty: "LXGW WenKai", cursive;
-  --font-hand-master: "LXGW WenKai", cursive;
-  --font-hand-system: "LXGW WenKai", cursive;
+  --font-hand-kitty: "SharedPageEileenHand", "LXGW WenKai", cursive;
+  --font-hand-master: "SharedPageVeyrenHand", "LXGW WenKai", cursive;
+  --font-hand-system: "LXGW WenKai", system-ui, sans-serif;
 }
 
 /* Stable domain authors select handwriting through one shared presentation token. */
